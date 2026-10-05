@@ -1,4 +1,4 @@
-Dette projekt er et setup til data engineering projekter, hvor der bruges python, pytest og postgreSQL.
+Dette projekt er et setup til data engineering projekter, hvor der bruges Python, pytest og PostgreSQL.
 
 Projektet er sat op med Docker, Docker Compose og Dev Container.
 
@@ -30,13 +30,13 @@ Docker skal bruge WSL for at kunne køre. For at installere det:
 # Container system overview
 ```mermaid
 	flowchart TB
-    dh["Dockerhub"] L_dh_img1_0@-- download --> img1["Image: postgres:16"] & img3["Image: dpage/pgadmin4"]
-    img1 L_img1_con1_0@-- start --> con1["Container: postgres_db_service"]
-    fil1["Dockerfile"] L_fil1_img2_0@-- build --> img2["Image: app image"]
-    img2 L_img2_con2_0@-- start --> con2["Container: app_service"] & con3["Container: test_service"]
+    dh["Docker Hub"] L_dh_img1_0@-- download --> img1["Image: postgres:16"] & img3["Image: dpage/pgadmin4"]
+    img1 L_img1_con1_0@-- start --> con1["Service: db"]
+    fil1["Dockerfile"] L_fil1_img2_0@-- build --> img2["Application image"]
+    img2 L_img2_con2_0@-- start --> con2["Service: app"] & con3["Service: tests"]
     con2 L_con2_con1_0@-. depends on .-> con1
     con3 L_con3_con1_0@-. depends on .-> con1
-    img3 L_img3_con4_0@-- start --> con4["Container: pgadmin_service"]
+    img3 L_img3_con4_0@-- start --> con4["Service: pgadmin"]
     con4 L_con4_con1_0@-. depends on .-> con1
     con1 -- save data in --> n1["Volume: postgres_data"]
     con4 -- saves data in --> n2["Volume: pgadmin_data"]
@@ -68,20 +68,20 @@ Docker skal bruge WSL for at kunne køre. For at installere det:
     linkStyle 9 stroke:#cccccc,fill:none
 
 ```
-Systemet består af 4 containers:
-- ``app_service`` containeren kører app koden 
-- ``test_service`` containeren kører tests for app koden
-- ``postgres_db_service`` containeren kører databasen
-- ``pgadmin_service`` containeren kører pgAdmin applikationen
+Systemet består af 4 services:
+- ``app`` servicen kører applikationskoden
+- ``tests`` servicen kører testene
+- ``db`` servicen kører PostgreSQL
+- ``pgadmin`` servicen kører pgAdmin
 
-``app_service`` og ``test_service`` containerene bliver begge startet fra ``app_image``, der bliver bygget ud fra ``Dockerfile``. ``postgres_db_service`` og ``pgadmin_service`` bliver startet fra images (``postgres:16`` og ``dpage/pgadmin4``) hentet fra Docker Hub.
+``app`` og ``tests`` servicerne bruger samme application image, som bliver bygget ud fra ``Dockerfile``. ``db`` og ``pgadmin`` bliver startet fra images (``postgres:16`` og ``dpage/pgadmin4``) hentet fra Docker Hub.
 
-Data fra databasen i ``postgres_db_service`` bliver gemt i ``postgres_data`` volume. ``pgadmin_service`` gemmer config data i ``pg_admin`` volume.
+Data fra databasen i ``db`` bliver gemt i ``postgres_data`` volume. ``pgadmin`` gemmer konfigurationsdata i ``pgadmin_data`` volume.
 
 ---
 ## Fil overview
-- ``app`` mappen indeholder alt applikations koden. Når docker starter applikationen starter den ``app/main.py`` så det anbefales at køre alt i sin applikation gennem ``app/main.py``, da man ellers skal lave om i Docker og Docker Compose setup for at få det til at køre.
-- ``tests`` mappen indenholder alle test, som bliver kørt af ``test_service`` containeren. Der er to under mapper:
+- ``dmi_ohs`` mappen indeholder al applikationskode. Når Docker starter applikationen, starter den ``dmi_ohs/main.py``.
+- ``tests`` mappen indeholder alle tests, som bliver kørt af ``tests`` servicen. Der er to undermapper:
 	- ``tests/unit`` mappen indeholder alle unit tests, som er test af kode indenfor jeres applikation.
 	- ``tests/integration`` mappen indeholder integration tests. Det er test af forbindelsen til andre systemer. Lige nu er der en test, der tjekker forbindelsen til Postgres databasen.
 - ``.gitignore`` filen er en text fil, der beskriver hvilke filer og fil typer, der ikke skal skubbes til git.
@@ -134,11 +134,11 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 1. Sørg for at Docker Desktop er åben i baggrunden
 2. Åben terminalen i projektets root mappe
 3. Brug kommandoen ``docker compose up --build app``
-	- ``postgres:16`` image bliver hentet fra Docker Hub *(ved første kørsel)* og ``postgres_db_service`` containeren bliver startet
-	- ``app image`` bliver bygget ud fra ``Dockerfile`` og ``app_service`` containeren bliver startet ud fra ``app_image``
-        - *(``app_image`` bliver kun genbygget, hvis der er sket ændringer, der nødtvendigøre det pga. caching)*
+	- ``postgres:16`` image bliver hentet fra Docker Hub *(ved første kørsel)*, og ``db`` servicen bliver startet
+	- Application imaget bliver bygget ud fra ``Dockerfile``, og ``app`` servicen bliver startet
+        - *(Imaget bliver kun genbygget, hvis der er sket ændringer, der nødvendiggør det på grund af caching.)*
 4. Brug kommandoen ``docker compose down``
-	- ``postgres_db_service`` containeren og ``app_service`` containeren bliver stoppet.
+	- ``db`` og ``app`` servicerne bliver stoppet.
 
 ---
 ## Køre testene
@@ -146,17 +146,17 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 1. Sørg for at Docker Desktop er åben i baggrunden.
 2. Åben terminalen i projektets root,
 3. Brug kommandoen ``docker compose run --build --rm tests``
-	- ``postgres:16`` image bliver hentet fra Dockerhub *(ved første kørsel)* og ``postgres_db_service`` containeren bliver startet.
-	- ``app image`` bliver bygget ud fra ``Dockerfile`` og ``test_service`` containeren bliver startet ud fra ``app image``
-	- ``test_service`` containeren lukker automatisk efter kørsel pga. ``--rm`` flaget.
+	- ``postgres:16`` image bliver hentet fra Docker Hub *(ved første kørsel)*, og ``db`` servicen bliver startet.
+	- Application imaget bliver bygget ud fra ``Dockerfile``, og ``tests`` servicen bliver startet
+	- ``tests`` servicen lukker automatisk efter kørsel på grund af ``--rm`` flaget.
 4. Brug kommandoen ``docker compose down``
-	- ``postgres_db_service`` containeren bliver nu stoppet. 
-		- *(Den bliver automatisk startet, når ``test_service`` containeren bliver startet, men den bliver ikke automatisk stoppet, da flere containers, ex. ``app_service``, kunne være afhængig af den.)*
+	- ``db`` servicen bliver nu stoppet.
+		- *(Den bliver automatisk startet, når ``tests`` servicen bliver startet, men den bliver ikke automatisk stoppet, da andre services, f.eks. ``app``, kan være afhængige af den.)*
 
 ---
 ## pgAdmin
 
-pgAdmin er et værktøj til at administrere postgreSQL databaser. Det kan være praktisk til at visualisere ens database og konstruere queries.
+pgAdmin er et værktøj til at administrere PostgreSQL-databaser. Det kan være praktisk til at visualisere ens database og konstruere queries.
 
 Der er en pgAdmin container sat up i projektet. For at åbne den:
 1. Åben terminallen i projektets root
@@ -179,11 +179,11 @@ Det er forresten best practice at lave **version pinning** i sin ``requirements.
 ---
 # Docker / Docker Compose kommandoer
 
-- **Start ``app_service``:** ``docker compose up --build app``
-- **Kør ``test_service``:** ``docker compose run --build --rm tests``
+- **Start ``app``:** ``docker compose up --build app``
+- **Kør ``tests``:** ``docker compose run --build --rm tests``
 - **Stop services:** ``docker compose down``
 - **Stop services og slet volumes:** ``docker compose down -v``
-- **Start ``pgadmin_service``:** ``docker compose up -d pgadmin``
+- **Start ``pgadmin``:** ``docker compose up -d pgadmin``
 - **Se alle containers:** ``docker compose ps -a``
 - **Se alle images:** ``docker image ls``
 - **Slet alle images:** ``docker image prune -a``

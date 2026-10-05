@@ -6,7 +6,7 @@
         "context": ".."
     },
 
-    "workspaceFolder": "/workspaces/python_project_template",
+    "workspaceFolder": "/workspaces/dmi-ohs-data-pipeline",
 
     "mounts": [
         "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"

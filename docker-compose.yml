@@ -2,7 +2,6 @@ services:
 
   app:
     build: .
-    container_name: app_service
     depends_on:
       db:
         condition: service_healthy
@@ -15,7 +14,6 @@ services:
 
   tests:
     build: .
-    container_name: test_service
     depends_on:
       db:
         condition: service_healthy
@@ -25,11 +23,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    command: pytest --cov=app
+    command: pytest --cov=dmi_ohs
 
   db:
     image: postgres:16
-    container_name: postgres_db_service
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -47,7 +44,6 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: pgadmin_service
     depends_on:
       db:
         condition: service_healthy

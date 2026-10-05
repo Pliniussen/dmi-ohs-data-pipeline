@@ -1,4 +1,4 @@
-from app.calculator import *
+from dmi_ohs.calculator import add, subtract
 
 def test_add():
     assert(add(2, 2) == 4)
