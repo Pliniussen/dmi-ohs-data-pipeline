@@ -1,0 +1,486 @@
+{
+    "source": "https://www.dmi.dk/friedata/dokumentation/meteorological-observations-data",
+    "source_description": "DMI Meteorological Observations documentation",
+    "catalog_scope": "All parameters documented for DMI Meteorological Observations",
+    "parameters": {
+        "temp_dew": {
+            "unit": "deg C",
+            "frequency": "10 min",
+            "description": ["Present dew point temperature measured 2 m over terrain"]
+        },
+        "temp_dry": {
+            "unit": "deg C",
+            "frequency": "10 min",
+            "description": ["Present air temperature measured 2 m over terrain"]
+        },
+        "temp_max_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's maximum air temperature measured 2 m over terrain"]
+        },
+        "temp_mean_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean air temperature measured 2 m over terrain"]
+        },
+        "temp_min_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's minimum air temperature measured 2 m over terrain"]
+        },
+        "temp_max_past12h": {
+            "unit": "deg C",
+            "frequency": "Twice a day",
+            "description": ["Last 12 hours maximum air temperature measured 2 m above ground. Measured at 0600 and 1800 UTC."]
+        },
+        "temp_min_past12h": {
+            "unit": "deg C",
+            "frequency": "Twice a day",
+            "description": ["Last 12 hours minimum air temperature measured 2 m above ground. Measured at 0600 and 1800 UTC."]
+        },
+        "temp_grass": {
+            "unit": "deg C",
+            "frequency": "10 min",
+            "description": ["Present air temperature measured at grass height (5-20 cm over terrain)"]
+        },
+        "temp_grass_max_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's maximum air temperature measured at grass height (5-20 cm over terrain)"]
+        },
+        "temp_grass_mean_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean air temperature measured at grass height (5-20 cm over terrain)"]
+        },
+        "temp_grass_min_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's minimum air temperature measured at grass height (5-20 cm over terrain)"]
+        },
+        "temp_soil": {
+            "unit": "deg C",
+            "frequency": "10 min",
+            "description": ["Present temperature measured at a depth of 10 cm"]
+        },
+        "temp_soil_max_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's maximum temperature measured at a depth of 10 cm"]
+        },
+        "temp_soil_mean_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean temperature measured at a depth of 10 cm"]
+        },
+        "temp_soil_min_past1h": {
+            "unit": "deg C",
+            "frequency": "Hourly",
+            "description": ["Latest hour's minimum temperature measured at a depth of 10 cm"]
+        },
+        "wind_dir": {
+            "unit": "degree",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes' mean wind direction measured 10 m over terrain. 0 means calm (see Codes)."]
+        },
+        "wind_dir_past1h": {
+            "unit": "degree",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean wind direction measured 10 m over terrain"]
+        },
+        "wind_gust_always_past1h": {
+            "unit": "m/s",
+            "frequency": "Hourly",
+            "description": ["Latest hour's highest 3 seconds mean wind speed measured 10 m over terrain"]
+        },
+        "wind_max": {
+            "unit": "m/s",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes' highest 3 seconds mean wind speed measured 10 m over terrain"]
+        },
+        "wind_speed": {
+            "unit": "m/s",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes' mean wind speed measured 10 m over terrain"]
+        },
+        "wind_speed_past1h": {
+            "unit": "m/s",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean wind speed measured 10 m over terrain"]
+        },
+        "humidity": {
+            "unit": "%",
+            "frequency": "10 min",
+            "description": ["Present relative humidity measured 2 m over terrain"]
+        },
+        "humidity_past1h": {
+            "unit": "%",
+            "frequency": "Hourly",
+            "description": ["Latest hour's mean for relative humidity measured 2 m over terrain"]
+        },
+        "pressure": {
+            "unit": "hPa",
+            "frequency": "10 min",
+            "description": ["Atmospheric pressure at station level"]
+        },
+        "pressure_at_sea": {
+            "unit": "hPa",
+            "frequency": "10 min",
+            "description": ["Atmospheric pressure reduced to mean sea level"]
+        },
+        "wind_min": {
+            "unit": "m/s",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes' lowest 3 seconds mean wind speed measured 10 m over terrain"]
+        },
+        "wind_min_past1h": {
+            "unit": "m/s",
+            "frequency": "Hourly",
+            "description": ["Latest hour's lowest 3 second mean wind speed measured 10 m over terrain"]
+        },
+        "wind_gust_past10min": {
+            "unit": "m/s",
+            "frequency": "10 min",
+            "description": ["Highest wind gust in the last 10 minutes which was at least 10 knots higher than the mean wind speed"]
+        },
+        "wind_gust_last1h": {
+            "unit": "m/s",
+            "frequency": "Hourly",
+            "description": ["Highest wind gust of the past hour which was at least 10 knots higher than the mean wind speed"]
+        },
+        "wind_gust_last3h": {
+            "unit": "m/s",
+            "frequency": "at 03:00, 09:00, 15:00 and 21:00 UTC",
+            "description": ["Highest wind gust during the 3-hour period preceding the time specified in the hourly observations, which was at least 10 knots higher than the mean wind speed"]
+        },
+        "wind_gust_last6h": {
+            "unit": "m/s",
+            "frequency": "at 00:00, 06:00, 12:00 and 18:00 UTC",
+            "description": ["Highest wind gust during the 6-hour period preceding the time specified in the hourly observations, which was at least 10 knots higher than the mean wind speed"]
+        },
+        "wind_max_per10min_past1h": {
+            "unit": "m/s",
+            "frequency": "Hourly",
+            "description": ["Maximum 10-minute average wind speed in the one hour period preceding the time of observation"]
+        },
+        "visib_mean_last10min": {
+            "unit": "m",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes' mean visibility"]
+        },
+        "cloud_cover": {
+            "unit": "%",
+            "frequency": "10 min",
+            "description": ["The fraction of the sky covered by cloud of any type or height above the ground (see also Codes)"]
+        },
+        "cloud_height": {
+            "unit": "m",
+            "frequency": "10 min",
+            "description": ["Height to the lowest clouds. No value returned under cloud free conditions."]
+        },
+        "visibility": {
+            "unit": "m",
+            "frequency": "10 min",
+            "description": ["Present visibility"]
+        },
+        "weather": {
+            "unit": "enum",
+            "frequency": "10 min",
+            "description": ["Present weather (see Codes)"]
+        },
+        "precip_past1h": {
+            "unit": "kg/m2",
+            "frequency": "Hourly",
+            "description": ["Accumulated precipitation in the latest hour or the code -0.1, which means \"traces of precipitation, less than 0.1 kg/m2\". kg/m2 is equivalent to mm. (see Codes)"]
+        },
+        "precip_past10min": {
+            "unit": "kg/m2",
+            "frequency": "10 min",
+            "description": ["Accumulated precipitation in the latest 10 minutes. kg/m2 is equivalent to mm."]
+        },
+        "precip_past1min": {
+            "unit": "kg/m2",
+            "frequency": "10 min",
+            "description": [
+                "Accumulated precipitation in the latest minute. kg/m2 is equivalent to mm.",
+                "Data is sent to the DMI from the rain gauge every 10 minutes, if it has rained within the 10 minute period. No data is sent, if it hasn't rained within the 10 minute period.",
+                "Therefore, data will be null, if it hasn't rained within the 10 minute period. If, however, it has rained within the 10 minute period, the minutes, where it has rained, will show, how much it has rained during each of the minutes in question, whereas the minutes, where it didn't rain will be shown as '0'."
+            ]
+        },
+        "precip_past24h": {
+            "unit": "kg/m2",
+            "frequency": "Daily",
+            "description": ["Accumulated precipitation in the latest 24 hours or the code -0.1, which means \"traces of precipitation, less than 0.1 kg/m2\". kg/m2 is equivalent to mm. (see Codes)"]
+        },
+        "precip_dur_past10min": {
+            "unit": "minutes",
+            "frequency": "10 min",
+            "description": ["Number of minutes with precipitation in the latest 10 minutes"]
+        },
+        "precip_dur_past1h": {
+            "unit": "minutes",
+            "frequency": "Hourly",
+            "description": ["Number of minutes with precipitation in the latest hour"]
+        },
+        "snow_depth_man": {
+            "unit": "cm",
+            "frequency": "Daily",
+            "description": ["Snow depth (measured manually) or the code -1, which means \"less than 0.5 cm\" (see Codes)"]
+        },
+        "snow_cover_man": {
+            "unit": "enum",
+            "frequency": "Daily",
+            "description": ["Snow cover measured manually, specified as quarters of the earth covered"]
+        },
+        "radia_glob": {
+            "unit": "W/m2",
+            "frequency": "10 min",
+            "description": ["Latest 10 minutes global radiation mean intensity"]
+        },
+        "radia_glob_past1h": {
+            "unit": "W/m2",
+            "frequency": "10 min",
+            "description": ["Mean intensity of global radiation in the latest hour"]
+        },
+        "sun_last10min_glob": {
+            "unit": "minutes",
+            "frequency": "10 min",
+            "description": ["Number of minutes with sunshine the latest 10 minutes"]
+        },
+        "sun_last1h_glob": {
+            "unit": "minutes",
+            "frequency": "Hourly",
+            "description": ["Number of minutes with sunshine the latest hour"]
+        },
+        "leav_hum_dur_past10min": {
+            "unit": "minutes",
+            "frequency": "10 min",
+            "description": ["Number of minutes with leaf moisture the latest 10 minutes"]
+        },
+        "leav_hum_dur_past1h": {
+            "unit": "minutes",
+            "frequency": "Hourly",
+            "description": ["Number of minutes with leaf moisture the latest hour"]
+        }
+    },
+    "code_sets": {
+        "precip_past1h_precip_past24h": {
+            "-0.1": "Traces of precipitation, less than 0.1 kg/m2"
+        },
+        "snow_depth_man": {
+            "-1": "Less than 0.5 cm"
+        },
+        "wind_dir": {
+            "0": "Calm"
+        },
+        "cloud_cover": {
+            "0": "0 oktas - no clouds",
+            "10": "1 okta or less, but not zero",
+            "25": "2 oktas",
+            "40": "3 oktas",
+            "50": "4 oktas",
+            "60": "5 oktas",
+            "75": "6 oktas",
+            "90": "7 oktas or more, but not 8 oktas",
+            "100": "8 oktas - full cloud cover with no breaks",
+            "112": "Sky obscured by fog and/or other meteorological phenomena"
+        },
+        "weather": {
+            "0": "Cloud development not observed or not observable; characteristic change of the state of sky during the past hour",
+            "1": "Clouds generally dissolving or becoming less developed",
+            "2": "State of sky on the whole unchanged",
+            "3": "Clouds generally forming or developing",
+            "4": "Visibility reduced by smoke, e.g. veldt or forest fires, industrial smoke or volcanic ashes",
+            "5": "Haze",
+            "6": "Widespread dust in suspension in the air, not raised by wind at or near the station at the time of observation",
+            "7": "Dust or sand raised by wind at or near the station, but no well developed dust whirl(s) or duststorm or sandstorm",
+            "8": "Well developed dust whirl(s) or sand whirl(s) seen at or near the station, but no duststorm or sandstorm",
+            "9": "Duststorm or sandstorm within sight at the time of observation, or at the station during the preceding hour",
+            "10": "Mist",
+            "11": "Fog or ice fog in patches",
+            "12": "Fog or ice fog, more or less continuous",
+            "13": "Lightning visible, no thunder heard",
+            "14": "Precipitation within sight, not reaching the ground or the surface of the sea",
+            "15": "Precipitation within sight, reaching the ground or the surface of the sea, but distant, estimated to be more than 5 km from the station",
+            "16": "Precipitation within sight, reaching the ground or the surface of the sea, near to, but not at the station",
+            "17": "Thunderstorm, but no precipitation at the time of observation",
+            "18": "Squalls at or within sight of the station during the preceding hour or at the time of observation",
+            "19": "Funnel cloud(s) (tornado cloud or water-spout)",
+            "20": "Drizzle (not freezing) or snow grains, not falling as shower(s)",
+            "21": "Rain (not freezing)",
+            "22": "Snow",
+            "23": "Rain and snow or ice pellets",
+            "24": "Freezing drizzle or freezing rain",
+            "25": "Shower(s) of rain",
+            "26": "Shower(s) of snow, or of rain and snow",
+            "27": "Shower(s) of hail, or of rain and hail",
+            "28": "Fog or ice fog",
+            "29": "Thunderstorm (with or without precipitation)",
+            "30": "Slight or moderate duststorm or sandstorm - has decreased during the preceding hour",
+            "31": "Slight or moderate duststorm or sandstorm - no appreciable change during the preceding hour",
+            "32": "Slight or moderate duststorm or sandstorm - has begun or has increased during the preceding hour",
+            "33": "Severe duststorm or sandstorm - has decreased during the preceding hour",
+            "34": "Severe duststorm or sandstorm - no appreciable change during the preceding hour",
+            "35": "Severe duststorm or sandstorm - has begun or has increased during the preceding hour",
+            "36": "Slight or moderate blowing snow, generally low (below eye level)",
+            "37": "Heavy drifting snow",
+            "38": "Slight or moderate blowing snow, generally high (above eye level)",
+            "39": "Heavy blowing snow",
+            "40": "Fog or ice fog at a distance, but not at the station during the preceding hour, extending above the level of the observer",
+            "41": "Fog or ice fog in patches",
+            "42": "Fog or ice fog, sky visible; has become thinner during the preceding hour",
+            "43": "Fog or ice fog, sky invisible",
+            "44": "Fog or ice fog, sky visible; no appreciable change during the preceding hour",
+            "45": "Fog or ice fog, sky invisible",
+            "46": "Fog or ice fog, sky visible; has begun or has become thicker during the preceding hour",
+            "47": "Fog or ice fog, sky invisible",
+            "48": "Fog, depositing rime, sky visible",
+            "49": "Fog, depositing rime, sky invisible",
+            "50": "Drizzle, not freezing, intermittent, slight at time of observation",
+            "51": "Drizzle, not freezing, continuous",
+            "52": "Drizzle, not freezing, intermittent, moderate at time of observation",
+            "53": "Drizzle, not freezing, continuous",
+            "54": "Drizzle, not freezing, intermittent, heavy (dense) at time of observation",
+            "55": "Drizzle, not freezing, continuous",
+            "56": "Drizzle, freezing, slight",
+            "57": "Drizzle, freezing, moderate or heavy (dense)",
+            "58": "Drizzle and rain, slight",
+            "59": "Drizzle and rain, moderate or heavy",
+            "60": "Rain, not freezing, intermittent, slight at time of observation",
+            "61": "Rain, not freezing, continuous",
+            "62": "Rain, not freezing, intermittent, moderate at time of observation",
+            "63": "Rain, not freezing, continuous",
+            "64": "Rain, not freezing, intermittent, heavy at time of observation",
+            "65": "Rain, not freezing, continuous",
+            "66": "Rain, freezing, slight",
+            "67": "Rain, freezing, moderate or heavy (dense)",
+            "68": "Rain or drizzle and snow, slight",
+            "69": "Rain or drizzle and snow, moderate or heavy",
+            "70": "Intermittent fall of snowflakes, slight at time of observation",
+            "71": "Continuous fall of snowflakes",
+            "72": "Intermittent fall of snowflakes, moderate at time of observation",
+            "73": "Continuous fall of snowflakes",
+            "74": "Intermittent fall of snowflakes, heavy at time of observation",
+            "75": "Continuous fall of snowflakes",
+            "76": "Diamond dust, with or without fog",
+            "77": "Snow grains",
+            "78": "Isolated star-like snow crystals",
+            "79": "Ice pellets",
+            "80": "Rain shower(s), slight",
+            "81": "Rain shower(s), moderate or heavy",
+            "82": "Rain shower(s), violent",
+            "83": "Shower(s) of rain and snow mixed, slight",
+            "84": "Shower(s) of rain and snow mixed, moderate or heavy",
+            "85": "Snow shower(s), slight",
+            "86": "Snow shower(s), moderate or heavy",
+            "87": "Shower(s) of snow pellets or small hail, with or without rain or rain and snow mixed, slight",
+            "88": "Shower(s) of snow pellets or small hail, with or without rain or rain and snow mixed, moderate or heavy",
+            "89": "Shower(s) of hail, with or without thunder, not associated with thunder, slight",
+            "90": "Shower(s) of hail, with or without thunder, not associated with thunder, moderate or heavy",
+            "91": "Slight rain at time of observation; thunderstorm during the preceding hour but not at time of observation",
+            "92": "Moderate or heavy rain at time of observation; thunderstorm during the preceding hour but not at time of observation",
+            "93": "Slight snow, or rain and snow mixed or hail at time of observation; thunderstorm during the preceding hour but not at time of observation",
+            "94": "Moderate or heavy snow, or rain and snow mixed or hail at time of observation; thunderstorm during the preceding hour but not at time of observation",
+            "95": "Thunderstorm, slight or moderate, without hail but with rain and/or snow at time of observation; thunderstorm at time of observation",
+            "96": "Thunderstorm, slight or moderate, with hail at time of observation",
+            "97": "Thunderstorm, heavy, without hail but with rain and/or snow at time of observation",
+            "98": "Thunderstorm combined with duststorm or sandstorm at time of observation",
+            "99": "Thunderstorm, heavy, with hail at time of observation",
+            "100": "No significant weather observed",
+            "101": "Clouds generally dissolving or becoming less developed during the past hour",
+            "102": "State of sky on the whole unchanged during the past hour",
+            "103": "Clouds generally forming or developing during the past hour",
+            "104": "Haze or smoke, or dust in suspension in the air, visibility equal to or greater than 1 km",
+            "105": "Haze or smoke, or dust in suspension in the air, visibility less than 1 km",
+            "106-109": "Reserved",
+            "110": "Mist",
+            "111": "Diamond dust",
+            "112": "Distant lightning",
+            "113-117": "Reserved",
+            "118": "Squalls",
+            "119": "Reserved",
+            "120": "Fog",
+            "121": "Precipitation",
+            "122": "Drizzle (not freezing) or snow grains",
+            "123": "Rain (not freezing)",
+            "124": "Snow",
+            "125": "Freezing drizzle or freezing rain",
+            "126": "Thunderstorm (with or without precipitation)",
+            "127": "Blowing or drifting snow or sand",
+            "128": "Blowing or drifting snow or sand, visibility equal to or greater than 1 km",
+            "129": "Blowing or drifting snow or sand, visibility less than 1 km",
+            "130": "Fog",
+            "131": "Fog or ice fog in patches",
+            "132": "Fog or ice fog, has become thinner during the past hour",
+            "133": "Fog or ice fog, no appreciable change during the past hour",
+            "134": "Fog or ice fog, has begun or become thicker during the past hour",
+            "135": "Fog, depositing rime",
+            "136-139": "Reserved",
+            "140": "Precipitation",
+            "141": "Precipitation, slight or moderate",
+            "142": "Precipitation, heavy",
+            "143": "Liquid precipitation, slight or moderate",
+            "144": "Liquid precipitation, heavy",
+            "145": "Solid precipitation, slight or moderate",
+            "146": "Solid precipitation, heavy",
+            "147": "Freezing precipitation, slight or moderate",
+            "148": "Freezing precipitation, heavy",
+            "149": "Reserved",
+            "150": "Drizzle",
+            "151": "Drizzle, not freezing, slight",
+            "152": "Drizzle, not freezing, moderate",
+            "153": "Drizzle, not freezing, heavy",
+            "154": "Drizzle, freezing, slight",
+            "155": "Drizzle, freezing, moderate",
+            "156": "Drizzle, freezing, heavy",
+            "157": "Drizzle and rain, slight",
+            "158": "Drizzle and rain, moderate or heavy",
+            "159": "Reserved",
+            "160": "Rain",
+            "161": "Rain, not freezing, slight",
+            "162": "Rain, not freezing, moderate",
+            "163": "Rain, not freezing, heavy",
+            "164": "Rain, freezing, slight",
+            "165": "Rain, freezing, moderate",
+            "166": "Rain, freezing, heavy",
+            "167": "Rain (or drizzle) and snow, slight",
+            "168": "Rain (or drizzle) and snow, moderate or heavy",
+            "169": "Reserved",
+            "170": "Snow",
+            "171": "Snow, slight",
+            "172": "Snow, moderate",
+            "173": "Snow, heavy",
+            "174": "Ice pellets, slight",
+            "175": "Ice pellets, moderate",
+            "176": "Ice pellets, heavy",
+            "177": "Snow grains",
+            "178": "Ice crystals",
+            "179": "Reserved",
+            "180": "Shower(s) or intermittent precipitation",
+            "181": "Rain shower(s) or intermittent rain, slight",
+            "182": "Rain shower(s) or intermittent rain, moderate",
+            "183": "Rain shower(s) or intermittent rain, heavy",
+            "184": "Rain shower(s) or intermittent rain, violent",
+            "185": "Snow shower(s) or intermittent snow, slight",
+            "186": "Snow shower(s) or intermittent snow, moderate",
+            "187": "Snow shower(s) or intermittent snow, heavy",
+            "188": "Reserved",
+            "189": "Hail",
+            "190": "Thunderstorm",
+            "191": "Thunderstorm, slight or moderate, with no precipitation",
+            "192": "Thunderstorm, slight or moderate, with rain showers and/or snow showers",
+            "193": "Thunderstorm, slight or moderate, with hail",
+            "194": "Thunderstorm, heavy, with no precipitation",
+            "195": "Thunderstorm, heavy, with rain showers and/or snow showers",
+            "196": "Thunderstorm, heavy, with hail",
+            "197-198": "Reserved",
+            "199": "Tornado"
+        }
+    },
+    "catalog_notes": [
+        "Values in this catalog are transcribed from the DMI documentation and are not supplied by the observation API.",
+        "The parameter catalog covers the full parameter list in the DMI documentation, including parameters not present at Odense Lufthavn.",
+        "Code descriptions are transcribed from the DMI documentation and are independent of any particular station or saved observation sample.",
+        "Review this catalog when DMI changes its documentation or adds parameters."
+    ]
+}

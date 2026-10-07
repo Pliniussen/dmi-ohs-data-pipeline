@@ -1,0 +1,1 @@
+curl --silent "https://opendataapi.dmi.dk/v2/metObs/collections/station/items?stationId=06120" | python3 -m json.tool > data/odense-station.json

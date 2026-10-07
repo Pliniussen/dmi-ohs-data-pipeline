@@ -1,0 +1,1 @@
+curl --silent "https://opendataapi.dmi.dk/v2/metObs/collections/observation/items?stationId=06120&datetime=2026-10-07T10:00:00%2B02:00/2026-10-07T11:00:00%2B02:00" | python3 -m json.tool > data/odense-observations-2026-10-07.json
