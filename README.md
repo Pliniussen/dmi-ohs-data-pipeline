@@ -166,6 +166,43 @@ Der er en pgAdmin container sat up i projektet. For at åbne den:
 5. Forbindelsen til databasen er allerede konfigureret. Når du connecter med databasen vil du blive promptet til at indtaste et password. Det er postgres passwordet fra ``.env`` filen
 
 ---
+## Databaseskema
+
+Databaseskemaet ligger i ``database/schema.sql``. Docker monterer filen i
+PostgreSQLs ``/docker-entrypoint-initdb.d``-mappe, så PostgreSQL kører den
+automatisk, første gang databasen oprettes.
+
+Efter oprettelsen kører applikationen migrationsfilerne i
+``database/migrations`` ved opstart. Tabellen ``schema_migrations`` holder
+styr på, hvilke migrations der allerede er kørt, så hver migration kun
+køres én gang. Nye ændringer til databasen skal derfor tilføjes som en ny,
+nummereret ``.sql``-fil i stedet for at ændre en migration, der allerede er
+kørt.
+
+Skemaet består af:
+
+- ``stations``: stationens stabile DMI-id og aktuelle metadata.
+- ``parameters``: parameterbeskrivelser fra ``data/dmi-parameter-catalog.json``.
+- ``parameter_codes``: forklaringer på kodede værdier, for eksempel
+  vejrkoder.
+- ``observations``: målinger i langt format, én række pr. station, parameter
+  og tidspunkt.
+
+Skemaet gemmer den aktuelle DMI-record pr. station. Hvis DMI returnerer flere
+historiske records for samme ``stationId``, vælger ETL-processen den aktuelle
+record, men gemmer dens gyldighedsdata og rå JSON for sporbarhed. Det passer
+til projektets fokus på aktuelle miljøforhold.
+
+Når der senere kommer måleudstyr inde i bygningen, kan der tilføjes en
+generaliseret kilde- eller enhedstabel, så både DMI-stationer og indendørs
+sensorer kan levere observationer.
+
+``database/schema.sql`` bruges kun som bootstrap for en ny database. Et
+eksisterende persistent ``postgres_data``-volume opdateres automatisk, når
+app- eller tests-servicen starter. Tag altid backup før migrations, der
+ændrer eller sletter eksisterende data.
+
+---
 ---
 # Libraries
 
