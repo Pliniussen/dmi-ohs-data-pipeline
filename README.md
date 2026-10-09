@@ -172,35 +172,31 @@ Databaseskemaet ligger i ``database/schema.sql``. Docker monterer filen i
 PostgreSQLs ``/docker-entrypoint-initdb.d``-mappe, så PostgreSQL kører den
 automatisk, første gang databasen oprettes.
 
-Efter oprettelsen kører applikationen migrationsfilerne i
-``database/migrations`` ved opstart. Tabellen ``schema_migrations`` holder
-styr på, hvilke migrations der allerede er kørt, så hver migration kun
-køres én gang. Nye ændringer til databasen skal derfor tilføjes som en ny,
-nummereret ``.sql``-fil i stedet for at ændre en migration, der allerede er
-kørt.
+Skemaet bliver kun kørt automatisk, når PostgreSQL-volume oprettes første gang.
+I denne tidlige udviklingsfase anvendes en frisk database ved skemaændringer:
+
+``docker compose down -v``
+
+Efterfølgende starter ``docker compose up --build app`` en ny database fra
+``database/schema.sql``.
 
 Skemaet består af:
 
-- ``stations``: stationens stabile DMI-id og aktuelle metadata.
-- ``parameters``: parameterbeskrivelser fra ``data/dmi-parameter-catalog.json``.
-- ``parameter_codes``: forklaringer på kodede værdier, for eksempel
-  vejrkoder.
-- ``observations``: målinger i langt format, én række pr. station, parameter
-  og tidspunkt.
+- ``stations``: station-id og koordinater udtrukket fra observationerne.
+- ``parameters``: statiske descriptions, units og frekvenser fra
+  ``reference_data/dmi-parameter-catalog.json``.
+- ``parameter_value_codes``: forklaringer på parameter-specifikke numeriske
+  værdier, for eksempel vejrkoder.
+- ``observations``: aktuelle observationer fra DMI's observations-API.
 
-Skemaet gemmer den aktuelle DMI-record pr. station. Hvis DMI returnerer flere
-historiske records for samme ``stationId``, vælger ETL-processen den aktuelle
-record, men gemmer dens gyldighedsdata og rå JSON for sporbarhed. Det passer
-til projektets fokus på aktuelle miljøforhold.
+Første version bruger én konfigureret station og kalder ikke station-API'et.
+Når der senere kommer måleudstyr inde i bygningen, kan observationerne
+udvides med en kilde- eller enhedsidentifikator.
 
-Når der senere kommer måleudstyr inde i bygningen, kan der tilføjes en
-generaliseret kilde- eller enhedstabel, så både DMI-stationer og indendørs
-sensorer kan levere observationer.
-
-``database/schema.sql`` bruges kun som bootstrap for en ny database. Et
-eksisterende persistent ``postgres_data``-volume opdateres automatisk, når
-app- eller tests-servicen starter. Tag altid backup før migrations, der
-ændrer eller sletter eksisterende data.
+``database/schema.sql`` bruges som bootstrap for en ny database. Et
+eksisterende persistent ``postgres_data``-volume opdateres ikke automatisk,
+når filen ændres. Når databasen senere indeholder data, bør projektet skifte
+til migrations i stedet for at slette volume'en.
 
 ---
 ---

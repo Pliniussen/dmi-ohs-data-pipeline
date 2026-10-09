@@ -23,7 +23,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    command: sh -c "python -m dmi_ohs.migrations && pytest --cov=dmi_ohs"
+    command: pytest --cov=dmi_ohs
 
   db:
     image: postgres:16
