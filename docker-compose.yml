@@ -11,6 +11,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./sample_data:/dmi-ohs-data-pipeline/sample_data:ro
 
   tests:
     build: .
@@ -23,6 +25,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./sample_data:/dmi-ohs-data-pipeline/sample_data:ro
     command: pytest --cov=dmi_ohs
 
   db:

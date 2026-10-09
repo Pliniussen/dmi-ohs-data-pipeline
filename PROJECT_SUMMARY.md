@@ -85,6 +85,7 @@ Completed:
 - Parameter metadata schema based on the local DMI catalog.
 - Observation schema with parameter references and duplicate protection.
 - Schema bootstrap wiring through PostgreSQL's initialization directory.
+- Reference data copied into the application image and sample data mounted at runtime.
 - Basic database connection integration test and calculator unit tests.
 
 Not yet completed:
@@ -131,23 +132,17 @@ Not yet completed:
 
 ### P2 — Maintainability and delivery
 
-11. **There is no documented ETL command yet.** The README needs a command
+10. **There is no documented ETL command yet.** The README needs a command
     explaining how to load the saved fixtures or fetch fresh DMI data.
 11. **There are no schema or loader integration tests.** The project needs
    tests for schema creation, upserts, duplicate handling, catalog
    validation, and observation loading.
-13. **Generated and temporary data files are not clearly separated.** The
-    contents of `data/` should distinguish authoritative fixtures, downloaded
-    raw responses, extraction commands, and temporary files.
-14. **The application image currently copies the database directory but not
-    the data fixtures.** The future loader must either copy/mount the fixture
-    data or accept explicit input paths.
-15. **No continuous integration workflow is configured.** Tests, coverage,
+12. **No continuous integration workflow is configured.** Tests, coverage,
     Compose validation, and other checks are not run automatically on pushes.
 
 ### P3 — Later extensibility
 
-15. **Indoor hardware sources are not modeled yet.** When sensors are
+14. **Indoor hardware sources are not modeled yet.** When sensors are
    introduced, add a source or device identifier to observations.
 
 ## Recommended next steps

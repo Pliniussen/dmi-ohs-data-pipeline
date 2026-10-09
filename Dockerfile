@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY dmi_ohs ./dmi_ohs
 COPY database ./database
+COPY reference_data ./reference_data
 COPY tests ./tests
 
 CMD ["python", "-m", "dmi_ohs.main"]
