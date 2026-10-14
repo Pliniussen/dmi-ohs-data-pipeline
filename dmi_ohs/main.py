@@ -8,7 +8,7 @@ def main():
         connection = get_connection()
         print("Connected to PostgreSQL!")
     finally:
-        connection.close()
+        connection.close() # type: ignore
 
 
 if __name__ == "__main__":

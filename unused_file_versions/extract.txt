@@ -1,0 +1,123 @@
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+CATALOG_PATH = Path(__file__).resolve().parent.parent / "reference_data" / "dmi-parameter-catalog.json"
+
+
+class ExtractError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Station:
+    station_id: str
+    longitude: Decimal
+    latitude: Decimal
+
+
+@dataclass(frozen=True)
+class Observation:
+    observation_id: str
+    station_id: str
+    parameter_id: str
+    observed_at: datetime
+    created_at: datetime
+    value: Decimal | None
+
+
+@dataclass(frozen=True)
+class ParsedObservations:
+    stations: list[Station]
+    observations: list[Observation]
+
+
+def _require(mapping: Any, key: str, where: str) -> Any:
+    if not isinstance(mapping, dict) or key not in mapping:
+        raise ExtractError(f"{where}: missing field '{key}'")
+    return mapping[key]
+
+
+def _parse_timestamp(raw: Any, where: str) -> datetime:
+    if not isinstance(raw, str):
+        raise ExtractError(f"{where}: timestamp must be a string")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ExtractError(f"{where}: invalid timestamp '{raw}'") from error
+    if parsed.tzinfo is None:
+        raise ExtractError(f"{where}: timestamp '{raw}' has no timezone")
+    return parsed
+
+
+def _parse_value(raw: Any, where: str) -> Decimal | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise ExtractError(f"{where}: value must be a number or null")
+    return Decimal(str(raw))
+
+
+def _parse_station(feature: dict, where: str) -> Station:
+    properties = _require(feature, "properties", where)
+    station_id = _require(properties, "stationId", where)
+    coordinates = _require(_require(feature, "geometry", where), "coordinates", where)
+    if (
+        not isinstance(station_id, str)
+        or not isinstance(coordinates, list)
+        or len(coordinates) < 2
+        or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in coordinates[:2])
+    ):
+        raise ExtractError(f"{where}: invalid stationId or coordinates")
+    # GeoJSON order is [longitude, latitude].
+    return Station(station_id, Decimal(str(coordinates[0])), Decimal(str(coordinates[1])))
+
+
+def parse_observations(payload: Any) -> ParsedObservations:
+    features = _require(payload, "features", "payload")
+    if not isinstance(features, list) or not features:
+        raise ExtractError("payload: no observation features")
+
+    stations: dict[str, Station] = {}
+    observations: list[Observation] = []
+
+    for index, feature in enumerate(features):
+        where = f"feature[{index}]"
+        properties = _require(feature, "properties", where)
+        station = _parse_station(feature, where)
+
+        known = stations.setdefault(station.station_id, station)
+        if known != station:
+            raise ExtractError(f"{where}: conflicting coordinates for station {station.station_id}")
+
+        parameter_id = _require(properties, "parameterId", where)
+        observation_id = _require(feature, "id", where)
+        if not isinstance(parameter_id, str) or not isinstance(observation_id, str):
+            raise ExtractError(f"{where}: id and parameterId must be strings")
+
+        observations.append(
+            Observation(
+                observation_id=observation_id,
+                station_id=station.station_id,
+                parameter_id=parameter_id,
+                observed_at=_parse_timestamp(_require(properties, "observed", where), where),
+                created_at=_parse_timestamp(_require(properties, "created", where), where),
+                value=_parse_value(_require(properties, "value", where), where),
+            )
+        )
+
+    return ParsedObservations(list(stations.values()), observations)
+
+
+def load_catalog(path: Path = CATALOG_PATH) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def validate_parameters(observations: list[Observation], catalog: dict) -> None:
+    known = catalog["parameters"]
+    missing = sorted({o.parameter_id for o in observations} - set(known))
+    if missing:
+        raise ExtractError(f"parameters missing from catalog: {', '.join(missing)}")
