@@ -82,8 +82,8 @@ Data fra databasen i ``db`` bliver gemt i ``postgres_data`` volume. ``pgadmin`` 
 ## Fil overview
 - ``dmi_ohs`` mappen indeholder al applikationskode. Når Docker starter applikationen, starter den ``dmi_ohs/main.py``.
 - ``tests`` mappen indeholder alle tests, som bliver kørt af ``tests`` servicen. Der er to undermapper:
-	- ``tests/unit`` mappen indeholder alle unit tests, som er test af kode indenfor jeres applikation.
-	- ``tests/integration`` mappen indeholder integration tests. Det er test af forbindelsen til andre systemer. Lige nu er der en test, der tjekker forbindelsen til Postgres databasen.
+  - ``tests/unit`` mappen indeholder alle unit tests, som er test af kode indenfor jeres applikation.
+  - ``tests/integration`` mappen indeholder integrationstests mod PostgreSQL, herunder indlæsning, gentagne indlæsninger og rollback ved fejl.
 - ``.gitignore`` filen er en text fil, der beskriver hvilke filer og fil typer, der ikke skal skubbes til git.
 - ``dockerignore`` filen er en text fil, der beskriver hvilke filer, der ikke skal kopieres ind i docker images
 - ``requirements.txt`` er text fil, der lister alle de libraries, der skal bruges til at køre applikationen.
@@ -140,6 +140,18 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 4. Brug kommandoen ``docker compose down``
 	- ``db`` og ``app`` servicerne bliver stoppet.
 
+App-servicen indlæser som standard den gemte observation i
+``sample_data/odense-observations-2026-10-07.json``. Den validerer og
+transformerer JSON-data, kontrollerer parameter-id'er mod det lokale katalog
+og indsætter eller opdaterer katalogdata, stationer og observationer i
+PostgreSQL. Når indlæsningen lykkes, udskrives antal rækker pr. tabel.
+Pipeline'en henter endnu ikke data direkte fra DMI's API.
+
+En anden JSON-fil kan angives, hvis den er tilgængelig i containeren, for
+eksempel en fil i den monterede ``sample_data``-mappe:
+
+``docker compose run --build --rm app python -m dmi_ohs.main /dmi-ohs-data-pipeline/sample_data/fil.json``
+
 ---
 ## Køre testene
 
@@ -152,6 +164,10 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 4. Brug kommandoen ``docker compose down``
 	- ``db`` servicen bliver nu stoppet.
 		- *(Den bliver automatisk startet, når ``tests`` servicen bliver startet, men den bliver ikke automatisk stoppet, da andre services, f.eks. ``app``, kan være afhængige af den.)*
+
+Testene omfatter unit tests af parsing, validering og kode-sæt samt
+PostgreSQL-integrationstests af indlæsning, idempotens og rollback. Testene
+kræver databaseforbindelsen fra Compose-miljøet.
 
 ---
 ## pgAdmin

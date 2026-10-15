@@ -2,11 +2,11 @@
 
 ## Extraction flow
 
-1. Fetch current observations from the DMI observation API for the configured station.
-2. Extract the observation fields from each API feature.
-3. Look up each `parameterId` in `reference_data/dmi-parameter-catalog.json`.
-4. Load the static parameter metadata and observations into PostgreSQL.
-5. Report an error for any observed parameter missing from the catalog.
+1. Read the saved observation JSON for the configured station. The pipeline does not yet fetch from the API.
+2. Validate and normalize its features into station and observation records.
+3. Check every observed `parameterId` against `reference_data/dmi-parameter-catalog.json`.
+4. Upsert parameter metadata, value-code descriptions, stations, and observations into PostgreSQL in one transaction.
+5. Print the number of rows loaded for each table.
 
 The parameter catalog is local reference data derived from DMI documentation. It supplies the static unit, frequency, and coded-value descriptions not included in the observation API.
 
@@ -68,7 +68,7 @@ volume and creating it again.
 
 ## Current reference data
 
-- `reference_data/dmi-parameter-catalog.json` contains the static parameter metadata and code mappings.
+- `reference_data/dmi-parameter-catalog.json` contains static parameter metadata and code mappings.
 - `sample_data/odense-observations-2026-10-07.json` contains a saved observation sample for the configured station.
 - The raw API files are strict JSON; extraction commands are kept in separate `.command.txt` files.
 
@@ -81,80 +81,30 @@ https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
 Completed:
 
 - PostgreSQL and Docker Compose development environment.
-- Station coordinate schema based on observation API data.
-- Parameter metadata schema based on the local DMI catalog.
-- Observation schema with parameter references and duplicate protection.
+- Station, parameter, value-code, and observation tables with foreign keys and duplicate protection.
 - Schema bootstrap wiring through PostgreSQL's initialization directory.
-- Reference data copied into the application image and sample data mounted at runtime.
-- Basic database connection integration test and calculator unit tests.
+- JSON parsing and validation for observation features, station coordinates, timestamps, and values.
+- Validation of observed parameter IDs against the local catalog.
+- Transactional, idempotent upserts for catalog data, stations, and observations.
+- A command-line pipeline that loads the bundled sample by default or accepts a JSON path, then reports row counts.
+- Unit tests for parsing, validation, and shared catalog code sets, plus PostgreSQL integration tests for loading, repeat loads, rollback, and the main command.
 
 Not yet completed:
 
-- DMI API extraction.
-- JSON validation and transformation.
-- Catalog validation for every observed parameter.
-- Loading parameters and observations into PostgreSQL.
-- Idempotent upserts and transaction handling in the ETL loader.
+- Fetching current observations directly from the DMI API.
 - Indoor hardware source/device model.
 
-## Known issues, ordered by priority
+## Known limitations
 
-### P0 — Main project functionality is missing
-
-1. **The ETL pipeline is not implemented.** The application currently
-   connects to PostgreSQL but does not fetch DMI data, transform JSON, or load
-   records.
-2. **The database is not populated.** The schema exists, but no parameters or
-   observations are loaded automatically.
-3. **There is no complete pipeline result or error workflow.** The application
-   does not report extracted record counts, load results, or meaningful
-   failures.
-
-### P1 — Correctness and reliability
-
-4. **Idempotent loading is not implemented.** Database uniqueness constraints
-   exist, but the loader still needs deliberate upsert behavior so repeated
-   runs do not fail or create duplicates.
-5. **API and input validation are missing.** The project needs handling for
-   HTTP failures, timeouts, malformed JSON, missing fields, empty responses,
-   invalid timestamps, and unexpected value types.
-6. **Unknown catalog parameters are not handled in code.** The loader must
-   stop and report an error when an observation parameter is missing from
-   `reference_data/dmi-parameter-catalog.json`.
-7. **Transaction and rollback behavior is not implemented.** A failed load
-   should not leave parameters and observations partially inserted.
-8. **The required 95% test coverage is not met or enforced.** ETL behavior,
-   validation, database writes, and failure paths still need tests, and the
-   test command does not currently enforce a minimum coverage threshold.
-9. **The integration test requires a configured PostgreSQL environment.**
-    Running pytest directly outside the Compose test container fails unless
-    the PostgreSQL environment variables and database are available.
-
-### P2 — Maintainability and delivery
-
-10. **There is no documented ETL command yet.** The README needs a command
-    explaining how to load the saved fixtures or fetch fresh DMI data.
-11. **There are no schema or loader integration tests.** The project needs
-   tests for schema creation, upserts, duplicate handling, catalog
-   validation, and observation loading.
-12. **No continuous integration workflow is configured.** Tests, coverage,
-    Compose validation, and other checks are not run automatically on pushes.
-
-### P3 — Later extensibility
-
-14. **Indoor hardware sources are not modeled yet.** When sensors are
-   introduced, add a source or device identifier to observations.
+- The pipeline currently consumes saved JSON; it does not make API requests or handle API-specific retries and timeouts.
+- Catalog entries are upserted when present, but entries removed from the local catalog are not deleted from PostgreSQL.
+- Coverage is collected by the Compose test command, but a 95% minimum is not enforced.
+- There is no continuous integration workflow yet.
+- The schema file bootstraps new database volumes only. Existing volumes will need migrations when the schema evolves.
 
 ## Recommended next steps
 
-1. Implement extraction and transformation functions for the saved observation
-   JSON fixture.
-2. Implement a PostgreSQL loader for parameters and observations with
-   validation, transactions, and `ON CONFLICT` upserts.
-3. Add focused unit tests for transformation and error cases.
-4. Add database integration tests for the complete load and repeat-load
-   behavior.
-5. Enforce the 95% coverage requirement.
-6. Document and run the complete ETL command.
-7. Add the indoor source/device model when the building hardware is
-   available.
+1. Add DMI API extraction with suitable timeout and retry behavior.
+2. Decide whether catalog synchronization should remove database entries that are no longer in the local catalog.
+3. Enforce the 95% coverage target if it remains a project requirement, and add continuous integration.
+4. Add the indoor source/device model when the building hardware is available.

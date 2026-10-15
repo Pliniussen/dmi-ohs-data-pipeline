@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from dmi_ohs.extract import (
+from dmi_ohs.extract_transform import (
     ExtractError,
     load_catalog,
     parse_observations,
