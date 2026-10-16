@@ -49,23 +49,6 @@ class LoadResult:
     observations: int
 
 
-def _code_set_parameters(key: str, parameters: dict) -> list[str]:
-    """Resolve a code set key to parameter IDs.
-
-    A key is normally one parameter ID, but the catalog shares one set between
-    parameters by joining their IDs with "_" (e.g. "precip_past1h_precip_past24h").
-    """
-    if key in parameters:
-        return [key]
-    for parameter_id in parameters:
-        prefix = parameter_id + "_"
-        if key.startswith(prefix):
-            rest = _code_set_parameters(key[len(prefix):], parameters)
-            if rest:
-                return [parameter_id, *rest]
-    raise ValueError(f"code set '{key}' does not match any catalog parameter")
-
-
 def load(connection, parsed: ParsedObservations, catalog: dict) -> LoadResult:
     """Upsert catalog reference data, stations and observations in one transaction.
 
@@ -79,8 +62,7 @@ def load(connection, parsed: ParsedObservations, catalog: dict) -> LoadResult:
     ]
     code_rows = [
         (parameter_id, code, description)
-        for key, codes in catalog.get("code_sets", {}).items()
-        for parameter_id in _code_set_parameters(key, catalog["parameters"])
+        for parameter_id, codes in catalog.get("code_sets", {}).items()
         for code, description in codes.items()
     ]
     station_rows = [(s.station_id, s.longitude, s.latitude) for s in parsed.stations]

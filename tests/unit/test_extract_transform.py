@@ -93,7 +93,13 @@ def test_invalid_value_type(payload, value):
 @pytest.mark.parametrize("coordinates", [[10.0], "10,55", ["a", "b"]])
 def test_invalid_coordinates(payload, coordinates):
     payload["features"][0]["geometry"]["coordinates"] = coordinates
-    with pytest.raises(ExtractError):
+    with pytest.raises(ExtractError, match="coordinates"):
+        parse_observations(payload)
+
+
+def test_station_id_must_be_a_string(payload):
+    payload["features"][0]["properties"]["stationId"] = 6120
+    with pytest.raises(ExtractError, match="stationId must be a string"):
         parse_observations(payload)
 
 

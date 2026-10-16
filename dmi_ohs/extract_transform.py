@@ -5,21 +5,19 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-# The parameter catalog is stored beside the application package, not in the
-# current working directory. Resolving from this file makes the path reliable
-# whether the program is started from the project root or another directory.
+# Find the catalog next to the project files, no matter where the program starts.
 CATALOG_PATH = Path(__file__).resolve().parent.parent / "reference_data" / "dmi-parameter-catalog.json"
 
 
 class ExtractError(ValueError):
-    """An input-data problem that should be reported to the caller."""
+    """An error caused by bad input data."""
 
     pass
 
 
 @dataclass(frozen=True)
 class Station:
-    """The identifying and location information shared by a weather station."""
+    """A station's ID and location."""
 
     station_id: str
     longitude: Decimal
@@ -40,29 +38,27 @@ class Observation:
 
 @dataclass(frozen=True)
 class ParsedObservations:
-    """The normalized result: unique stations plus all their observations."""
+    """The stations and measurements read from the input."""
 
     stations: list[Station]
     observations: list[Observation]
 
 
 def _require(mapping: Any, key: str, where: str) -> Any:
-    # JSON objects become Python dictionaries. Check both the container and
-    # field existence here so callers get a useful data error, not a KeyError
-    # or TypeError later in the parsing process.
+    # Check that this is an object and that it has the requested field.
+    # This gives a clear input error instead of a confusing Python error later.
     if not isinstance(mapping, dict) or key not in mapping:
         raise ExtractError(f"{where}: missing field '{key}'")
     return mapping[key]
 
 
 def _parse_timestamp(raw: Any, where: str) -> datetime:
-    # Timestamps arrive as text in the JSON. Require a timezone because a
-    # time such as 09:00 without a zone is ambiguous across locations.
+    # The timestamp must be text and include a timezone. Without one,
+    # a time like 09:00 could mean different things in different places.
     if not isinstance(raw, str):
         raise ExtractError(f"{where}: timestamp must be a string")
     try:
-        # Python's ISO parser accepts "+00:00"; JSON APIs often write the same
-        # UTC offset as "Z", so translate that suffix before parsing.
+        # Python expects "+00:00", while the input may use "Z" for UTC.
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as error:
         raise ExtractError(f"{where}: invalid timestamp '{raw}'") from error
@@ -72,17 +68,13 @@ def _parse_timestamp(raw: Any, where: str) -> datetime:
 
 
 def _parse_value(raw: Any, where: str) -> Decimal | None:
-    # A missing measurement is represented explicitly as JSON null, which
-    # Python reads as None. It is different from zero and is valid data.
+    # A missing measurement is null in JSON and None in Python. It is not zero.
     if raw is None:
         return None
-    # bool is a subclass of int in Python, so reject True/False explicitly:
-    # they describe truth values, not measured quantities.
+    # Python treats True and False like numbers, but they are not measurements.
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise ExtractError(f"{where}: value must be a number or null")
-    # Decimal is preferable to binary floating point for measured values:
-    # converting through str avoids importing the float's binary rounding
-    # artifacts into the decimal representation.
+    # Convert through text so Decimal does not inherit float rounding noise.
     return Decimal(str(raw))
 
 
@@ -90,64 +82,55 @@ def _parse_station(feature: dict, where: str) -> Station:
     # Station fields are split between GeoJSON's "properties" and "geometry".
     properties = _require(feature, "properties", where)
     station_id = _require(properties, "stationId", where)
-    coordinates = _require(_require(feature, "geometry", where), "coordinates", where)
-    # GeoJSON coordinates must contain at least longitude and latitude, both
-    # numeric. As above, booleans are technically numbers to Python but are
-    # not meaningful geographic coordinates.
-    if (
-        not isinstance(station_id, str)
-        or not isinstance(coordinates, list)
-        or len(coordinates) < 2
-        or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in coordinates[:2])
+    geometry = _require(feature, "geometry", where)
+    coordinates = _require(geometry, "coordinates", where)
+    if not isinstance(station_id, str):
+        raise ExtractError(f"{where}: stationId must be a string")
+    if not isinstance(coordinates, list) or len(coordinates) < 2:
+        raise ExtractError(f"{where}: coordinates must include longitude and latitude")
+    if not all(
+        isinstance(coordinate, (int, float)) and not isinstance(coordinate, bool)
+        for coordinate in coordinates[:2]
     ):
-        raise ExtractError(f"{where}: invalid stationId or coordinates")
+        raise ExtractError(f"{where}: coordinates must contain numeric longitude and latitude")
     # GeoJSON order is [longitude, latitude].
     return Station(station_id, Decimal(str(coordinates[0])), Decimal(str(coordinates[1])))
 
 
 def parse_observations(payload: Any) -> ParsedObservations:
-    """Validate the input payload and convert its features into Python records.
+    """Check the input and turn each feature into Python records.
 
-    A payload contains a list of observation features. Many observations can
-    refer to the same station, so this function returns stations separately
-    (deduplicated by station ID) from the full observation list.
+    Many measurements can come from one station, so each station is returned
+    once while every measurement is kept.
     """
-    # First find the top-level feature list. Empty input is treated as an
-    # error here rather than as a successful extraction of no data.
+    # The input must contain at least one feature.
     features = _require(payload, "features", "payload")
     if not isinstance(features, list) or not features:
         raise ExtractError("payload: no observation features")
 
-    # A dictionary gives us one station per station ID and makes it easy to
-    # detect if the same ID is later associated with different coordinates.
+    # Keep one station per ID so we can spot conflicting locations.
     stations: dict[str, Station] = {}
-    # Unlike stations, observations are not deduplicated: each feature is a
-    # separate measurement and must be retained in the output.
+    # Keep every observation; each feature is a separate measurement.
     observations: list[Observation] = []
 
-    # Process one feature at a time. "where" is included in errors so a bad
-    # field can be traced back to its position in the input list.
+    # Include the feature number in errors to help find bad input.
     for index, feature in enumerate(features):
         where = f"feature[{index}]"
         properties = _require(feature, "properties", where)
         station = _parse_station(feature, where)
 
-        # setdefault stores the station the first time we see its ID. If it
-        # already exists, compare the newly parsed location with the original.
+        # Save the station the first time we see its ID.
         known = stations.setdefault(station.station_id, station)
         if known != station:
             raise ExtractError(f"{where}: conflicting coordinates for station {station.station_id}")
 
-        # These identifiers connect an observation to its measured parameter
-        # and to the particular source record that supplied it.
+        # These IDs tell us which parameter was measured and identify the record.
         parameter_id = _require(properties, "parameterId", where)
         observation_id = _require(feature, "id", where)
         if not isinstance(parameter_id, str) or not isinstance(observation_id, str):
             raise ExtractError(f"{where}: id and parameterId must be strings")
 
-        # Construct a normalized Observation. Each value is checked and
-        # converted before it is stored, so later code can work with useful
-        # Python types instead of repeatedly interpreting raw JSON.
+        # Check and convert the values now so later code can use them directly.
         observations.append(
             Observation(
                 observation_id=observation_id,
@@ -159,8 +142,7 @@ def parse_observations(payload: Any) -> ParsedObservations:
             )
         )
 
-    # Convert the station dictionary's values to a list for the public result.
-    # The observations list still has one entry for every input feature.
+    # Return the unique stations and all observations as lists.
     return ParsedObservations(list(stations.values()), observations)
 
 
@@ -172,9 +154,8 @@ def load_catalog(path: Path = CATALOG_PATH) -> dict:
 def validate_parameters(observations: list[Observation], catalog: dict) -> None:
     """Fail if any observation uses a parameter absent from the catalog.
 
-    The catalog is expected to have a "parameters" mapping whose keys are
-    parameter IDs. Comparing sets checks all observations at once; the set
-    removes duplicates, and sorting makes any error message deterministic.
+    The catalog's "parameters" keys are the allowed parameter IDs. Sort the
+    unknown IDs so the error message is always in the same order.
     """
     known = catalog["parameters"]
     missing = sorted({o.parameter_id for o in observations} - set(known))

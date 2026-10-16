@@ -264,7 +264,10 @@
         }
     },
     "code_sets": {
-        "precip_past1h_precip_past24h": {
+        "precip_past1h": {
+            "-0.1": "Traces of precipitation, less than 0.1 kg/m2"
+        },
+        "precip_past24h": {
             "-0.1": "Traces of precipitation, less than 0.1 kg/m2"
         },
         "snow_depth_man": {
