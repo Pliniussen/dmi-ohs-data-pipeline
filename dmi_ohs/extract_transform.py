@@ -75,7 +75,10 @@ def _parse_value(raw: Any, where: str) -> Decimal | None:
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise ExtractError(f"{where}: value must be a number or null")
     # Convert through text so Decimal does not inherit float rounding noise.
-    return Decimal(str(raw))
+    value = Decimal(str(raw))
+    if not value.is_finite():
+        raise ExtractError(f"{where}: value must be a finite number or null")
+    return value
 
 
 def _parse_station(feature: dict, where: str) -> Station:
@@ -94,7 +97,22 @@ def _parse_station(feature: dict, where: str) -> Station:
     ):
         raise ExtractError(f"{where}: coordinates must contain numeric longitude and latitude")
     # GeoJSON order is [longitude, latitude].
-    return Station(station_id, Decimal(str(coordinates[0])), Decimal(str(coordinates[1])))
+    longitude = Decimal(str(coordinates[0]))
+    latitude = Decimal(str(coordinates[1]))
+    if (
+        not longitude.is_finite()
+        or not latitude.is_finite()
+        or not -180 <= longitude <= 180
+        or not -90 <= latitude <= 90
+    ):
+        raise ExtractError(
+            f"{where}: coordinates out of range (longitude: -180 to 180, latitude: -90 to 90)"
+        )
+    return Station(
+        station_id=station_id,
+        longitude=longitude,
+        latitude=latitude,
+    )
 
 
 def parse_observations(payload: Any) -> ParsedObservations:

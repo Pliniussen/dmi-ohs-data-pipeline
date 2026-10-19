@@ -90,11 +90,37 @@ def test_invalid_value_type(payload, value):
         parse_observations(payload)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_value(payload, value):
+    payload["features"][0]["properties"]["value"] = value
+    with pytest.raises(ExtractError, match="finite"):
+        parse_observations(payload)
+
+
 @pytest.mark.parametrize("coordinates", [[10.0], "10,55", ["a", "b"]])
 def test_invalid_coordinates(payload, coordinates):
     payload["features"][0]["geometry"]["coordinates"] = coordinates
     with pytest.raises(ExtractError, match="coordinates"):
         parse_observations(payload)
+
+
+@pytest.mark.parametrize(
+    "coordinates",
+    [[181, 0], [-181, 0], [0, 91], [0, -91], [float("nan"), 0], [0, float("inf")]],
+)
+def test_coordinates_out_of_range(payload, coordinates):
+    payload["features"][0]["geometry"]["coordinates"] = coordinates
+    with pytest.raises(ExtractError, match="out of range"):
+        parse_observations(payload)
+
+
+@pytest.mark.parametrize("coordinates", [[-180, -90], [180, 90]])
+def test_coordinate_range_endpoints_are_allowed(payload, coordinates):
+    for feature in payload["features"]:
+        feature["geometry"]["coordinates"] = coordinates
+    station = parse_observations(payload).stations[0]
+    assert station.longitude == Decimal(str(coordinates[0]))
+    assert station.latitude == Decimal(str(coordinates[1]))
 
 
 def test_station_id_must_be_a_string(payload):
