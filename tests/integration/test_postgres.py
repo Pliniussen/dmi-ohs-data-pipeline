@@ -9,6 +9,7 @@ def test_database_connection():
             cursor.execute("SELECT 1")
             result = cursor.fetchone()
 
+        assert result is not None
         assert result[0] == 1
 
     finally:

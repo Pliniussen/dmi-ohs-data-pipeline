@@ -144,7 +144,8 @@ App-servicen indlæser som standard den gemte observation i
 ``sample_data/odense-observations-2026-10-07.json``. Den validerer og
 transformerer JSON-data, kontrollerer parameter-id'er mod det lokale katalog
 og indsætter eller opdaterer katalogdata, stationer og observationer i
-PostgreSQL. Når indlæsningen lykkes, udskrives antal rækker pr. tabel.
+PostgreSQL i én transaktion. Ved succes udskrives antal inputrækker sendt til
+upsert for hver tabel; tallene er ikke antal nye eller ændrede rækker.
 Pipeline'en henter endnu ikke data direkte fra DMI's API.
 
 En anden JSON-fil kan angives, hvis den er tilgængelig i containeren, for
@@ -205,9 +206,10 @@ Skemaet består af:
   værdier, for eksempel vejrkoder.
 - ``observations``: aktuelle observationer fra DMI's observations-API.
 
-Første version bruger én konfigureret station og kalder ikke station-API'et.
-Når der senere kommer måleudstyr inde i bygningen, kan observationerne
-udvides med en kilde- eller enhedsidentifikator.
+Den medfølgende observationsfil indeholder én station; parseren kan læse flere
+stationer, men pipeline'en kalder ikke station-API'et. Når der senere kommer
+måleudstyr inde i bygningen, kan observationerne udvides med en kilde- eller
+enhedsidentifikator.
 
 ``database/schema.sql`` bruges som bootstrap for en ny database. Et
 eksisterende persistent ``postgres_data``-volume opdateres ikke automatisk,

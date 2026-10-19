@@ -62,10 +62,13 @@ def load(connection, parsed: ParsedObservations, catalog: dict) -> LoadResult:
     ]
     code_rows = [
         (parameter_id, code, description)
-        for parameter_id, codes in catalog.get("code_sets", {}).items()
+        for parameter_id, codes in catalog["code_sets"].items()
         for code, description in codes.items()
     ]
-    station_rows = [(s.station_id, s.longitude, s.latitude) for s in parsed.stations]
+    station_rows = [
+        (s.station_id, s.longitude, s.latitude)
+        for s in parsed.stations
+    ]
     observation_rows = [
         (o.observation_id, o.station_id, o.parameter_id, o.observed_at, o.created_at, o.value)
         for o in parsed.observations
