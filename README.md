@@ -159,12 +159,12 @@ eksempel en fil i den monterede ``sample_data``-mappe:
 1. Sørg for at Docker Desktop er åben i baggrunden.
 2. Åben terminalen i projektets root,
 3. Brug kommandoen ``docker compose run --build --rm tests``
-	- ``postgres:16`` image bliver hentet fra Docker Hub *(ved første kørsel)*, og ``db`` servicen bliver startet.
+  - ``postgres:16`` image bliver hentet fra Docker Hub *(ved første kørsel)*, og ``db`` servicen bliver startet.
 	- Application imaget bliver bygget ud fra ``Dockerfile``, og ``tests`` servicen bliver startet
 	- ``tests`` servicen lukker automatisk efter kørsel på grund af ``--rm`` flaget.
 4. Brug kommandoen ``docker compose down``
-	- ``db`` servicen bliver nu stoppet.
-		- *(Den bliver automatisk startet, når ``tests`` servicen bliver startet, men den bliver ikke automatisk stoppet, da andre services, f.eks. ``app``, kan være afhængige af den.)*
+  - ``db`` servicen bliver nu stoppet.
+    - *(Den bliver automatisk startet, når ``tests`` servicen bliver startet, men den bliver ikke automatisk stoppet, da andre services, f.eks. ``app``, kan være afhængige af den.)*
 
 Testene omfatter unit tests af parsing, validering og kode-sæt samt
 PostgreSQL-integrationstests af indlæsning, idempotens og rollback. Testene
