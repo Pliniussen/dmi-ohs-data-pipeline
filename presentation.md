@@ -121,8 +121,15 @@ docker compose run --build --rm tests
 ```
 
 The service runs `pytest --cov=dmi_ohs`. PostgreSQL must be available through
-Docker Compose. The load integration fixture truncates its test tables, so run the
-integration tests against a database whose data can be discarded. A test database will need to be implemented when real-time API data is collected.
+Docker Compose. The `tests` service connects to a separate database on the same
+PostgreSQL server, named by `TEST_POSTGRES_DB` (default `dmi_ohs_test`). On the
+first initialization of an empty volume, `database/init-test-db.sh` creates
+that database and applies the same `database/schema.sql` as the app database.
+Integration-test cleanup truncates only tables in the test database.
+
+PostgreSQL initialization files do not run again for an existing data volume.
+Recreating it with `docker compose down -v` deletes both databases and pgAdmin
+settings, so only do this while that data can be discarded.
 
 ### Unit tests — `tests/unit/test_extract_transform.py`
 
@@ -150,6 +157,7 @@ are accepted.
 ## 6. Current status and next step
 
 The parsing, catalog validation, transactional database loading, and automated
-tests are in place. A natural next step is to create a test database and start fetching observations directly from
-the DMI API, then consider API timeout/retry handling and broader pipeline
+tests with an isolated test database are in place. A natural next step is to
+start fetching observations directly from the DMI API, then consider API
+timeout/retry handling and broader pipeline
 coverage. Afterwards, if project scope and time contraints allow it, a real-time data visualisations dashboard could be implemented.

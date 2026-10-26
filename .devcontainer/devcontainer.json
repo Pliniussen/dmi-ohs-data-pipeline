@@ -8,16 +8,6 @@
 
     "workspaceFolder": "/workspaces/dmi-ohs-data-pipeline",
 
-    "mounts": [
-        "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind"
-    ],
-
-    "features": {
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-            "moby": false
-        }
-    },
-
     "customizations": {
         "vscode": {
             "extensions": [

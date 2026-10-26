@@ -128,6 +128,14 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 4. Nede i venstre hjørne af VS Code vil der nu være et blåt mærke, hvor der står ``Dev Container: ...`` op du har nu adgang til dine dependencies.
 5. For at lukke dev containeren, åben command pallete (``ctrl`` + ``shift`` + ``p``) og brug kommandoen ``Dev Containers: Reopen Folder Locally``
 
+### Dev container og Docker Compose er adskilte
+
+Dev containeren bruges kun til at skrive kode (IntelliSense og fejlmarkering). Den er ikke en del af Docker Compose-projektet og kan ikke nå ``db``. Kør derfor alle ``docker compose``-kommandoer i en WSL-terminal i projektets root, **uden for** dev containeren.
+
+**Kør ikke** ``docker compose`` i dev containerens terminal. Docker-dæmonen kører uden for containeren og kender ikke containerens stier (``/workspaces/...``), så bind mounts, f.eks. ``database/schema.sql``, bliver til tomme mapper.
+
+Unit tests uden database kan køres i dev containeren med ``pytest tests/unit``. Kør ikke ``pytest`` uden argumenter der, da integrationstestene kræver databasen.
+
 ---
 ## Start og stop applikationen
 
@@ -166,6 +174,13 @@ eksempel en fil i den monterede ``sample_data``-mappe:
   - ``db`` servicen bliver nu stoppet.
     - *(Den bliver automatisk startet, når ``tests`` servicen bliver startet, men den bliver ikke automatisk stoppet, da andre services, f.eks. ``app``, kan være afhængige af den.)*
 
+Tests-servicen bruger en separat database på samme PostgreSQL-server.
+``TEST_POSTGRES_DB`` vælger testdatabasens navn og er som standard
+``dmi_ohs_test``. Når PostgreSQL-volume'en initialiseres første gang, opretter
+``database/init-test-db.sh`` denne database og anvender samme
+``database/schema.sql`` som app-databasen. Testenes ``TRUNCATE``-kommandoer
+rammer dermed kun testdatabasen.
+
 Testene omfatter unit tests af parsing, validering og kode-sæt samt
 PostgreSQL-integrationstests af indlæsning, idempotens og rollback. Testene
 kræver databaseforbindelsen fra Compose-miljøet.
@@ -187,15 +202,20 @@ Der er en pgAdmin container sat up i projektet. For at åbne den:
 
 Databaseskemaet ligger i ``database/schema.sql``. Docker monterer filen i
 PostgreSQLs ``/docker-entrypoint-initdb.d``-mappe, så PostgreSQL kører den
-automatisk, første gang databasen oprettes.
+automatisk på app-databasen, første gang PostgreSQL-volume'en initialiseres.
+Derefter opretter ``database/init-test-db.sh`` testdatabasen fra
+``TEST_POSTGRES_DB`` (standard: ``dmi_ohs_test``) og anvender det samme skema.
 
-Skemaet bliver kun kørt automatisk, når PostgreSQL-volume oprettes første gang.
-I denne tidlige udviklingsfase anvendes en frisk database ved skemaændringer:
+Init-filerne bliver kun kørt automatisk, når PostgreSQL-volume'en oprettes
+første gang. For at aktivere den nye testdatabase på en allerede eksisterende
+volume skal den genskabes:
 
 ``docker compose down -v``
 
-Efterfølgende starter ``docker compose up --build app`` en ny database fra
-``database/schema.sql``.
+**Advarsel:** Kommandoen sletter ``postgres_data`` med app- og testdatabasen
+samt ``pgadmin_data`` med pgAdmin-indstillinger. Brug den kun, mens disse data
+må gå tabt. Derefter starter ``docker compose run --build --rm tests`` begge
+databaser automatisk.
 
 Skemaet består af:
 
@@ -229,6 +249,8 @@ Det er forresten best practice at lave **version pinning** i sin ``requirements.
 ---
 ---
 # Docker / Docker Compose kommandoer
+
+Køres i en WSL-terminal i projektets root, uden for dev containeren.
 
 - **Start ``app``:** ``docker compose up --build app``
 - **Kør ``tests``:** ``docker compose run --build --rm tests``

@@ -107,55 +107,38 @@ Not yet completed:
 - **`postgres_data`** is a Docker-managed persistent volume mounted at PostgreSQL's data directory. PostgreSQL stores its internal files there for all databases on that server. It is storage used by the server, not a database to connect to or a directory to edit by hand.
 - **pgAdmin** is a separate web interface that connects to PostgreSQL. It helps browse databases and run queries; it does not store the pipeline's database records. It is available at `http://localhost:8080` while its service is running.
 
+### Dev container and Compose commands
+
+The dev container (`.devcontainer/`) is only an editor environment with the Python libraries installed, so VS Code can provide IntelliSense and diagnostics. It is not part of the Compose project and cannot reach the `db` service. Run all `docker compose` commands in a WSL terminal at the project root, outside the dev container. Running Compose inside the dev container sends container paths such as `/workspaces/...` to the host Docker daemon, which cannot find them and creates empty directories in place of bind-mounted files.
+
+```bash
+docker compose run --build --rm app      # load sample data into the app database
+docker compose run --build --rm tests    # run pytest against the test database
+docker compose up -d pgadmin             # pgAdmin at http://localhost:8080
+docker compose down                      # stop services
+```
+
+Unit tests that need no database can run inside the dev container with `pytest tests/unit`.
+
 The `app` service uses the default command from `Dockerfile`, `python -m dmi_ohs.main`: it loads the bundled sample into the database and then exits. To start the database, pgAdmin, and run that app without starting tests, use `docker compose up --build db pgadmin app`. To start only PostgreSQL in the background, use `docker compose up -d db`.
 
-### Why the integration tests can delete data
+### Test database isolation and initialization
 
-In `docker-compose.yml`, `app` and `tests` currently receive the same `POSTGRES_DB`. The `connection` fixture in `tests/integration/test_load.py` calls `clear()` before and after each test that uses it. `clear()` runs `TRUNCATE` on `observations`, `parameter_value_codes`, `parameters`, and `stations`. This deletes the rows in those tables in whichever database the test connection uses. Do not run these integration tests against a database containing data you need to keep.
+The `app` service connects to `POSTGRES_DB`. The `tests` service connects to a separate database on the same PostgreSQL server, named by `TEST_POSTGRES_DB` (default `dmi_ohs_test`). The integration fixture truncates tables in whichever database the test connection uses, so this separation keeps app rows out of reach of routine test cleanup.
 
-### Recommended protection: a separate test database on the same server
+The Postgres image creates the initial database named by `POSTGRES_DB` and runs `database/schema.sql` against it when the data volume is first initialized. The `db` service also passes `TEST_POSTGRES_DB` to `database/init-test-db.sh`. That script creates the second database and applies the same schema file to it. The health check verifies the test schema exists before Compose starts dependent services.
 
-This does not require another PostgreSQL container. Keep the app connected to the existing database and point only the `tests` service at a second database, for example `dmi_ohs_test`:
+PostgreSQL only runs initialization files when its data directory is empty. To use this new setup with an existing volume, run `docker compose down -v`, then run `docker compose run --build --rm tests`.
 
-```yaml
-app:
-  environment:
-    POSTGRES_DB: ${POSTGRES_DB}
-
-tests:
-  environment:
-    POSTGRES_HOST: ${POSTGRES_HOST}
-    POSTGRES_PORT: ${POSTGRES_PORT}
-    POSTGRES_DB: ${TEST_POSTGRES_DB:-dmi_ohs_test}
-    POSTGRES_USER: ${POSTGRES_USER}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-```
-
-The snippet shows only the relevant settings; keep the other service settings already in `docker-compose.yml`. `TEST_POSTGRES_DB` is a database name, not a secret. It can be set in `.env` (`TEST_POSTGRES_DB=dmi_ohs_test`) or left to the fallback shown above.
-
-The test database must have the project's tables too. `database/schema.sql` defines those tables. The `db` service mounts that file at `/docker-entrypoint-initdb.d/001-schema.sql`; the official PostgreSQL image runs scripts there only while initializing an empty data directory. It creates the initial database named by `POSTGRES_DB` and runs the schema file against it. A persistent, already-initialized `postgres_data` volume is not initialized again just because the Compose file or SQL changes.
-
-For the existing volume, create the test database and apply the schema once. Start `db`, then run:
-
-```sh
-docker compose exec db sh -c 'createdb -U "$POSTGRES_USER" dmi_ohs_test'
-docker compose exec -T db sh -c \
-	'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d dmi_ohs_test' \
-	< database/schema.sql
-```
-
-After setting the `tests` service to use `dmi_ohs_test`, run the suite with `docker compose run --build --rm tests`. The fixture's `TRUNCATE` will then clear test rows only; the app database remains separate. The setup commands above are one-time per persistent volume and assume `dmi_ohs_test` does not already exist. Do not use `docker compose down -v` as a shortcut: it deletes the persistent volumes, including `postgres_data` and all databases stored in it.
-
-Applying `schema.sql` to two different databases is necessary: tables are part of each database and are not shared. Applying this project's current schema file again to the same database will not delete existing rows because its table and index definitions use `IF NOT EXISTS`, but it also will not update an existing table definition. Schema changes to an existing database should eventually use migrations.
+**Warning:** `docker compose down -v` deletes `postgres_data`, including both databases and their data, and `pgadmin_data`, including pgAdmin settings. Use it only while those data can be discarded. Ordinary test runs do not delete the app database; the tests only truncate tables in the separate test database.
 
 ## Known limitations
 
 - The pipeline currently consumes saved JSON; it does not make API requests or handle API-specific retries and timeouts.
-- PostgreSQL integration fixtures truncate their test tables. Until the tests are configured to use the separate `dmi_ohs_test` database described above, do not run them against app data that must be preserved.
+- PostgreSQL initialization files bootstrap new volumes only. Existing volumes are not updated automatically when the schema evolves.
 - Catalog entries are upserted when present, but entries removed from the local catalog are not deleted from PostgreSQL.
 - Coverage is collected by the Compose test command, but no minimum threshold is enforced.
 - There is no continuous integration workflow yet.
-- The schema file bootstraps new database volumes only. Existing volumes will need migrations when the schema evolves.
 
 ## Recommended next steps
 
