@@ -2,25 +2,24 @@
 
 ## 1. What the project does
 
-This Python pipeline takes a saved DMI observation JSON file, validates its
-station and measurement fields, converts them into typed records, deduplicates
-stations by ID, checks parameter IDs against a local DMI catalog, and upserts
-the data into PostgreSQL. This is structural normalization, not measurement
-unit conversion. It uses the bundled Odense sample by default; a different
-JSON file can be supplied on the command line.
-
-**Current scope:** the pipeline reads saved JSON files. It does not yet fetch
-observations directly from the DMI API.
+This Python pipeline fetches DMI observations for one or more stations from
+the DMI observation API, validates the station and measurement fields, converts them
+into typed records, deduplicates stations by ID, skips parameters missing from
+a local DMI catalog, and upserts the data into PostgreSQL. This is structural
+normalization, not measurement unit conversion. Each run continues from each
+station's newest stored observation. A saved JSON file can be loaded instead with
+`--file`.
 
 ## 2. Pipeline flow
 
 ```mermaid
 flowchart TD
-    A["Saved observation JSON"] --> B["main.run"]
+    W["latest_observed_at (fetch window)"] --> A
+    A["fetch_observations (DMI API) or --file JSON"] --> B["main.run"]
     B --> C["parse_observations"]
     C --> D["Validate fields, convert types, deduplicate stations"]
-    B --> E["Load local parameter catalog"]
-    D --> F["validate_parameters"]
+    B --> E["load_catalog (with shape checks)"]
+    D --> F["filter_known_parameters"]
     E --> F
     F --> G["load"]
     G --> H["PostgreSQL"]
@@ -30,6 +29,8 @@ flowchart TD
 The loader writes parameter metadata, value-code descriptions, stations, and
 observations in that order, inside one transaction. Upserts make repeated
 loads safe; a failure rolls the transaction back (e.g. if a station row is rejected because its longitude violates the database constraint).
+Moved stations, duplicate measurements, and skipped parameters are reported
+as warnings instead of stopping the load.
 
 ## 3. Database schema
 
@@ -91,26 +92,48 @@ erDiagram
 - **`parse_observations(payload)`** validates each feature and creates
   typed `Observation` records, converting numeric values to `Decimal` (while
   preserving `null`) and parsing timezone-aware timestamps. It deduplicates
-  stations by ID, rejects conflicting coordinates for one station, and keeps
-  every observation; it does not convert measurement units.
-- **`load_catalog(path)`** reads and decodes the local parameter-catalog JSON.
-- **`validate_parameters(observations, catalog)`** rejects observations whose
-  parameter IDs are not present in the catalog.
+  stations by ID; if one station's coordinates differ within the input, it
+  keeps those of the latest observation and returns a warning. It keeps every
+  observation and does not convert measurement units.
+- **`load_catalog(path)`** reads the local parameter-catalog JSON and checks
+  that its sections and parameter fields are present.
+- **`filter_known_parameters(observations, catalog)`** returns the
+  observations whose parameter is in the catalog, plus the sorted unknown IDs.
+
+### `dmi_ohs/api.py`
+
+- **`fetch_observations(station_id, start, end, session)`** requests the
+  observation API page by page until a page comes back short, and merges the
+  pages into one FeatureCollection. Failures raise `FetchError`.
+- **`make_session()`** creates an HTTP session that retries rate limits,
+  server errors, and dropped connections with backoff.
 
 ### `dmi_ohs/load.py`
 
 - **`load(connection, parsed, catalog)`** prepares catalog, station, and
   observation rows; upserts the four table groups in foreign-key order within
   one transaction; and returns the number of input rows submitted per group.
-  Those counts are not counts of newly inserted or changed database rows.
+  Those counts are not counts of newly inserted or changed database rows. It
+  also warns when a stored station has moved or a measurement is stored under
+  more than one observation ID.
+- **`latest_observed_at(connection, station_id)`** returns the newest stored
+  observation time for a station.
 
 ### `dmi_ohs/main.py`
 
-- **`run(input_path)`** reads the selected JSON, parses and validates it, opens
-  the database connection, loads the data, closes the connection, prints the
-  row counts, and returns the `LoadResult`.
-- **`main()`** uses the first command-line argument as the input path when
-  provided; otherwise it runs with the bundled Odense sample.
+- **`fetch_window(connection, station_id, lookback, now)`** starts one hour
+  before the newest stored observation, or `lookback` before now if there is
+  none, and ends now.
+- **`station_ids_from_env()`** reads the comma-separated `DMI_STATION_IDS`,
+  dropping blanks and repeats.
+- **`load_payload(connection, payload, catalog)`** parses, filters, and loads
+  one payload, and prints its warnings.
+- **`run_api(fetch)`** fetches and loads each station in its own transaction.
+  It returns each station's `LoadResult` (or `None` when there were no new
+  observations), and raises `PipelineError` after the loop if any station failed.
+- **`run_file(input_path)`** loads a saved JSON file.
+- **`main()`** calls `run_file()` when `--file` is given, otherwise `run_api()`,
+  and exits with an error message if a station failed.
 
 ## 5. Tests and how to run them
 
@@ -134,12 +157,24 @@ settings, so only do this while that data can be discarded.
 ### Unit tests — `tests/unit/test_extract_transform.py`
 
 Use the saved Odense fixture to check successful parsing, station
-deduplication, decimal values, timezone-aware timestamps, and parameter IDs
-present in the catalog. Invalid-input cases verify helpful errors for missing
+deduplication, decimal values, timezone-aware timestamps, and filtering of
+unknown parameters. Invalid-input cases verify helpful errors for missing
 or malformed fields, invalid timestamps and values, non-finite numbers,
-invalid/out-of-range coordinates, non-string IDs, and conflicting station
-coordinates. They also check that `null` values and coordinate range endpoints
-are accepted.
+invalid/out-of-range coordinates, non-string IDs, and malformed catalogs.
+They also check that `null` values and coordinate range endpoints are
+accepted, and that conflicting station coordinates resolve to the latest
+observation with a warning.
+
+### Unit tests — `tests/unit/test_api.py`
+
+Use a fake HTTP session (no network) to check request parameters, UTC time
+formatting, merging of multiple pages, stopping on a short or empty page
+despite a `next` link, `FetchError` on failures, and the retry configuration.
+
+### Unit tests — `tests/unit/test_main.py`
+
+Check that `DMI_STATION_IDS` is split on commas, trimmed, deduplicated in
+order, defaults to `06120`, and is rejected when it contains no IDs.
 
 ### Integration tests — `tests/integration/`
 
@@ -151,13 +186,24 @@ are accepted.
   duplicate records are not created.
 - **`test_failed_load_rolls_back`** removes a required parameter from the
   catalog, expects the load to fail, and verifies that no partial data remains.
-- **`test_main_run_loads_sample`** exercises the `run()` entry point against
-  the sample file and verifies that observations reach the database.
+- **`test_run_file_loads_sample`** exercises `run_file()` with the sample
+  file and verifies that observations reach the database.
+- **`test_station_move_is_overwritten_with_warning`** and
+  **`test_duplicate_measurement_is_kept_with_warning`** check the load warnings.
+- **`test_run_api_resumes_after_latest_observation`** runs twice with a
+  fake fetch and checks the initial lookback, the one-hour overlap on the
+  second run, and that the overlap does not duplicate rows.
+- **`test_run_api_loads_each_station_with_its_own_window`** checks that a
+  stored station continues while a new station uses the lookback.
+- **`test_run_api_continues_after_a_failing_station`** checks that one failing
+  station doesn't stop the others.
+- **`test_run_api_with_no_new_observations`** and
+  **`test_run_api_skips_unknown_parameters`** cover empty API results and
+  unknown parameters.
 
 ## 6. Current status and next step
 
-The parsing, catalog validation, transactional database loading, and automated
-tests with an isolated test database are in place. A natural next step is to
-start fetching observations directly from the DMI API, then consider API
-timeout/retry handling and broader pipeline
-coverage. Afterwards, if project scope and time contraints allow it, a real-time data visualisations dashboard could be implemented.
+Incremental fetching from the DMI API, parsing, catalog validation,
+transactional database loading, and automated tests with an isolated test
+database are in place. A natural next step is to schedule regular runs and
+add continuous integration. Afterwards, if project scope and time contraints allow it, a real-time data visualisations dashboard could be implemented.

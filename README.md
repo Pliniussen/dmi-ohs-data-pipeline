@@ -113,7 +113,13 @@ POSTGRES_PORT=5432
 PGADMIN_USER_EMAIL=admin@example.com
 
 PGADMIN_PASSWORD=password
+
+DMI_STATION_IDS=06120
+
+DMI_INITIAL_LOOKBACK_HOURS=24
 ```
+
+``DMI_STATION_IDS`` er en kommasepareret liste over de DMI-stationer, der hentes observationer fra, f.eks. ``06120,06180``. ``DMI_INITIAL_LOOKBACK_HOURS`` angiver, hvor mange timer bagud der hentes for en station, som endnu ikke har observationer i databasen, f.eks. første gang eller når en ny station tilføjes til listen. Begge er valgfrie; standardværdierne er vist ovenfor, og ``.env`` bør have de samme linjer som ``.env.example``.
 
 ---
 ## Dev container
@@ -128,13 +134,15 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 4. Nede i venstre hjørne af VS Code vil der nu være et blåt mærke, hvor der står ``Dev Container: ...`` op du har nu adgang til dine dependencies.
 5. For at lukke dev containeren, åben command pallete (``ctrl`` + ``shift`` + ``p``) og brug kommandoen ``Dev Containers: Reopen Folder Locally``
 
-### Dev container og Docker Compose er adskilte
+### Dev container og Docker Compose
 
-Dev containeren bruges kun til at skrive kode (IntelliSense og fejlmarkering). Den er ikke en del af Docker Compose-projektet og kan ikke nå ``db``. Kør derfor alle ``docker compose``-kommandoer i en WSL-terminal i projektets root, **uden for** dev containeren.
+Dev containeren er en service (``dev``) i samme Docker Compose-projekt som databasen. Den er defineret i ``.devcontainer/docker-compose.devcontainer.yml``, som kun bruges af dev containeren, så almindelige ``docker compose``-kommandoer ikke starter den. Når dev containeren åbnes, starter VS Code også ``db``, og dev containeren kan nå databasen på adressen ``db``. ``.env``-filen skal derfor findes, før dev containeren åbnes.
 
-**Kør ikke** ``docker compose`` i dev containerens terminal. Docker-dæmonen kører uden for containeren og kender ikke containerens stier (``/workspaces/...``), så bind mounts, f.eks. ``database/schema.sql``, bliver til tomme mapper.
+I dev containerens terminal kan man køre:
+- ``pytest`` for alle tests, også integrationstestene. Testene bruger altid testdatabasen (``TEST_POSTGRES_DB``), uanset hvad ``POSTGRES_DB`` er sat til; det sørger ``tests/conftest.py`` for.
+- ``python -m dmi_ohs.main`` for at hente observationer ind i app-databasen.
 
-Unit tests uden database kan køres i dev containeren med ``pytest tests/unit``. Kør ikke ``pytest`` uden argumenter der, da integrationstestene kræver databasen.
+``docker compose``-kommandoer skal stadig køres i en WSL-terminal i projektets root, **uden for** dev containeren, da dev containeren ikke har Docker installeret. Dev containeren og WSL-terminalen bruger samme Compose-projekt (``dmi-ohs-data-pipeline``), og dermed samme database. Bemærk, at ``docker compose down`` fra WSL også stopper dev containerens services.
 
 ---
 ## Start og stop applikationen
@@ -148,18 +156,29 @@ Unit tests uden database kan køres i dev containeren med ``pytest tests/unit``.
 4. Brug kommandoen ``docker compose down``
 	- ``db`` og ``app`` servicerne bliver stoppet.
 
-App-servicen indlæser som standard den gemte observation i
-``sample_data/odense-observations-2026-10-07.json``. Den validerer og
-transformerer JSON-data, kontrollerer parameter-id'er mod det lokale katalog
-og indsætter eller opdaterer katalogdata, stationer og observationer i
-PostgreSQL i én transaktion. Ved succes udskrives antal inputrækker sendt til
-upsert for hver tabel; tallene er ikke antal nye eller ændrede rækker.
-Pipeline'en henter endnu ikke data direkte fra DMI's API.
+App-servicen henter som standard observationer direkte fra DMI's
+observations-API (``opendataapi.dmi.dk``, kræver ingen API-nøgle). Hver kørsel
+fortsætter for hver station fra dens nyeste gemte observation, minus én times
+overlap, så sent ankomne rækker også kommer med. Er databasen tom, hentes de
+seneste ``DMI_INITIAL_LOOKBACK_HOURS`` timer. Overlappet giver ikke dubletter,
+fordi alle rækker indsættes med upsert.
 
-En anden JSON-fil kan angives, hvis den er tilgængelig i containeren, for
-eksempel en fil i den monterede ``sample_data``-mappe:
+Pipeline'en validerer og transformerer data og indsætter eller opdaterer
+katalogdata, stationer og observationer i PostgreSQL i én transaktion. Ved
+succes udskrives antal inputrækker sendt til upsert for hver tabel; tallene er
+ikke antal nye eller ændrede rækker. Hvis API'et ikke har nye observationer,
+udskrives en besked, og intet indlæses.
 
-``docker compose run --build --rm app python -m dmi_ohs.main /dmi-ohs-data-pipeline/sample_data/fil.json``
+Følgende situationer stopper ikke indlæsningen, men giver en advarsel:
+- Observationer med et parameter-id, der ikke findes i det lokale katalog, springes over.
+- Hvis en station har fået nye koordinater, overskrives de gamle.
+- Hvis samme måling (station, parameter og tidspunkt) er gemt under flere observations-id'er, beholdes alle rækker.
+
+En gemt JSON-fil kan indlæses i stedet for API'et med ``--file``, hvis filen er
+tilgængelig i containeren, for eksempel en fil i den monterede
+``sample_data``-mappe:
+
+``docker compose run --build --rm app python -m dmi_ohs.main --file /dmi-ohs-data-pipeline/sample_data/odense-observations-2026-10-07.json``
 
 ---
 ## Køre testene
@@ -181,9 +200,11 @@ Tests-servicen bruger en separat database på samme PostgreSQL-server.
 ``database/schema.sql`` som app-databasen. Testenes ``TRUNCATE``-kommandoer
 rammer dermed kun testdatabasen.
 
-Testene omfatter unit tests af parsing, validering og kode-sæt samt
-PostgreSQL-integrationstests af indlæsning, idempotens og rollback. Testene
-kræver databaseforbindelsen fra Compose-miljøet.
+Testene omfatter unit tests af parsing, validering, katalog og API-klienten
+(med en falsk HTTP-session, så der ikke kaldes ud på nettet) samt
+PostgreSQL-integrationstests af indlæsning, idempotens, rollback, advarsler og
+det inkrementelle hentevindue. Integrationstestene kræver databaseforbindelsen
+fra Compose-miljøet.
 
 ---
 ## pgAdmin
@@ -226,8 +247,10 @@ Skemaet består af:
   værdier, for eksempel vejrkoder.
 - ``observations``: aktuelle observationer fra DMI's observations-API.
 
-Den medfølgende observationsfil indeholder én station; parseren kan læse flere
-stationer, men pipeline'en kalder ikke station-API'et. Når der senere kommer
+Pipeline'en henter observationer for hver station i ``DMI_STATION_IDS``, én
+station ad gangen og i hver sin transaktion. Hvis én station fejler, bliver de
+øvrige stadig indlæst, og kørslen afsluttes med en fejl, der nævner den
+fejlede station. Pipeline'en kalder ikke station-API'et. Når der senere kommer
 måleudstyr inde i bygningen, kan observationerne udvides med en kilde- eller
 enhedsidentifikator.
 
