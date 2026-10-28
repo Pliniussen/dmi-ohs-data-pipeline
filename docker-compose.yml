@@ -1,3 +1,6 @@
+# A fixed project name, so the dev container and WSL commands share one db and volume.
+name: dmi-ohs-data-pipeline
+
 services:
 
   app:

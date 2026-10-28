@@ -1,0 +1,22 @@
+# Used only by the dev container (see devcontainer.json). Paths are relative
+# to the project root, the folder of the first Compose file.
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    volumes:
+      - .:/workspaces/dmi-ohs-data-pipeline:cached
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TEST_POSTGRES_DB: ${TEST_POSTGRES_DB:-dmi_ohs_test}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DMI_STATION_IDS: ${DMI_STATION_IDS:-06120}
+      DMI_INITIAL_LOOKBACK_HOURS: ${DMI_INITIAL_LOOKBACK_HOURS:-24}
