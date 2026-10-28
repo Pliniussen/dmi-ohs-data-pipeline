@@ -1,11 +1,16 @@
 {
     "name": "Python Development Container",
 
-    "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
-    "service": "dev",
-    "runServices": ["dev", "db"],
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
 
     "workspaceFolder": "/workspaces/dmi-ohs-data-pipeline",
+
+    // Non-root user; Dev Containers matches its UID to the host user, so files
+    // saved in the container stay owned by you in WSL.
+    "remoteUser": "vscode",
 
     "customizations": {
         "vscode": {

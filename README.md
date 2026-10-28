@@ -134,15 +134,17 @@ Løsningen er en Dev Container, som er en Docker container, hvor ens dependencie
 4. Nede i venstre hjørne af VS Code vil der nu være et blåt mærke, hvor der står ``Dev Container: ...`` op du har nu adgang til dine dependencies.
 5. For at lukke dev containeren, åben command pallete (``ctrl`` + ``shift`` + ``p``) og brug kommandoen ``Dev Containers: Reopen Folder Locally``
 
-### Dev container og Docker Compose
+### Dev container og Docker Compose er adskilte
 
-Dev containeren er en service (``dev``) i samme Docker Compose-projekt som databasen. Den er defineret i ``.devcontainer/docker-compose.devcontainer.yml``, som kun bruges af dev containeren, så almindelige ``docker compose``-kommandoer ikke starter den. Når dev containeren åbnes, starter VS Code også ``db``, og dev containeren kan nå databasen på adressen ``db``. ``.env``-filen skal derfor findes, før dev containeren åbnes.
+Dev containeren bruges kun til at skrive kode (IntelliSense og fejlmarkering). Den er ikke en del af Docker Compose-projektet og kan ikke nå ``db``. Kør derfor alle ``docker compose``-kommandoer i en WSL-terminal i projektets root, **uden for** dev containeren; dev containeren har ikke Docker installeret.
 
-I dev containerens terminal kan man køre:
-- ``pytest`` for alle tests, også integrationstestene. Testene bruger altid testdatabasen (``TEST_POSTGRES_DB``), uanset hvad ``POSTGRES_DB`` er sat til; det sørger ``tests/conftest.py`` for.
-- ``python -m dmi_ohs.main`` for at hente observationer ind i app-databasen.
+Unit tests uden database kan køres i dev containeren med ``pytest tests/unit``. Kør ikke ``pytest`` uden argumenter der, da integrationstestene kræver databasen. Alle tests køres med ``docker compose run --build --rm tests`` fra WSL.
 
-``docker compose``-kommandoer skal stadig køres i en WSL-terminal i projektets root, **uden for** dev containeren, da dev containeren ikke har Docker installeret. Dev containeren og WSL-terminalen bruger samme Compose-projekt (``dmi-ohs-data-pipeline``), og dermed samme database. Bemærk, at ``docker compose down`` fra WSL også stopper dev containerens services.
+Dev containeren kører som brugeren ``vscode`` i stedet for root. VS Code giver brugeren samme UID som din WSL-bruger, så filer, der gemmes i dev containeren, ejes af dig i WSL. Hvis filer i projektet alligevel er ejet af root (f.eks. fra en ældre dev container), kan ejerskabet rettes fra WSL med ``sudo chown -R $USER:$USER .`` i projektets root.
+
+#### Hvorfor dev containeren ikke er en Compose-service
+
+Dev containeren har kort været en service i Compose-projektet, så den kunne nå ``db``. Det virker ikke med Docker Compose 5.6.1 og Buildx 0.37.2 eller nyere: "Rebuild Container" fejler med ``additional privileges requested: pass "--allow=fs.read=/tmp/devcontainercli-.../Dockerfile-with-features"``. Dev Containers-extensionen lægger en genereret Dockerfile i ``/tmp``, uden for build-konteksten, og Compose giver ikke Buildx lov til at læse den. Det er en fejl i Docker Compose ([docker/compose#14285](https://github.com/docker/compose/issues/14285)), som er rettet i [docker/compose#14325](https://github.com/docker/compose/pull/14325), men endnu ikke udgivet. Når en Compose-version nyere end 5.6.1 med rettelsen er udgivet, kan opsætningen overvejes igen.
 
 ---
 ## Start og stop applikationen

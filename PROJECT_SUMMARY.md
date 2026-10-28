@@ -135,7 +135,7 @@ Completed:
 
 Not yet verified:
 
-- The integration tests for the API, multi-station, warning, and incremental-window features have been written but not yet run against PostgreSQL. Run `pytest` in the rebuilt dev container (or `docker compose run --build --rm tests` from WSL), then run `python -m dmi_ohs.main` twice: the second run should fetch only about the last hour per station.
+- The integration tests for the API, multi-station, warning, and incremental-window features have been written but not yet run against PostgreSQL. Run `docker compose run --build --rm tests` from WSL, then run `docker compose run --build --rm app` twice: the second run should fetch only about the last hour per station.
 
 Not yet completed:
 
@@ -155,11 +155,11 @@ Not yet completed:
 
 ### Dev container and Compose commands
 
-The dev container is a `dev` service in the same Compose project as the database, defined in `.devcontainer/docker-compose.devcontainer.yml`. Only the dev container uses that file, so ordinary `docker compose` commands don't start it. Opening the dev container also starts `db` (`runServices` in `devcontainer.json`), and the dev container reaches it at the host name `db`. The `.env` file must exist before the dev container is opened.
+The dev container is built from `.devcontainer/Dockerfile` alone and is used for editing (IntelliSense and linting). It is not part of the Compose project and cannot reach `db`, so only `pytest tests/unit` runs inside it. It has no Docker CLI; run `docker compose` commands in a WSL terminal at the project root. The repository should stay in the WSL filesystem (e.g. `/home/<user>/dmi-ohs-data-pipeline`), not under `/mnt/c`, for file performance.
 
-Before this setup, the dev container was built from its Dockerfile alone and was not on the Compose network. Running `docker compose` inside it through docker-outside-of-docker failed, because container paths such as `/workspaces/...` were sent to the host Docker daemon, which could not find them and mounted empty directories instead. Making the dev container a Compose service is the setup VS Code recommends for an app plus a database. The repository should stay in the WSL filesystem (e.g. `/home/<user>/dmi-ohs-data-pipeline`), not under `/mnt/c`, for file performance.
+The dev container runs as a non-root `vscode` user (`remoteUser` in `devcontainer.json`). Dev Containers sets that user's UID to the host user's, so files saved in the container stay owned by the WSL user. An earlier root-run container left root-owned files that WSL tools could not edit.
 
-`docker-compose.yml` sets a fixed project name, `dmi-ohs-data-pipeline`, so the dev container and WSL commands share one `db` container and one `postgres_data` volume. The dev container has no Docker CLI, so run `docker compose` commands in a WSL terminal at the project root. `docker compose down` from WSL also stops the dev container's services.
+The dev container was briefly a Compose service on the same network as `db`. That setup was reverted because rebuilding it fails with Docker Compose 5.6.1 and Buildx ≥0.37.2: Compose builds through Buildx bake, bake now enforces filesystem entitlements, and Compose does not grant read access to the `Dockerfile-with-features` that the Dev Containers CLI writes to `/tmp`, outside the build context. `COMPOSE_BAKE=false` has no effect in Compose 5, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` works only by disabling the check on each developer's machine. The bug is docker/compose#14285, fixed by docker/compose#14325 but not in a release yet. A dev container built from its own Dockerfile uses `docker buildx build`, which is not affected.
 
 ```bash
 docker compose run --build --rm app      # fetch new observations into the app database
@@ -168,7 +168,7 @@ docker compose up -d pgadmin             # pgAdmin at http://localhost:8080
 docker compose down                      # stop services
 ```
 
-Inside the dev container, `pytest` runs all tests and `python -m dmi_ohs.main` fetches into the app database. `tests/conftest.py` always points the tests at `TEST_POSTGRES_DB`, even when `POSTGRES_DB` names the app database (as it does in the dev container, and in terminals that load `.env`). Without it, the tests' `TRUNCATE` could wipe the app data.
+`tests/conftest.py` always points the tests at `TEST_POSTGRES_DB`, even when `POSTGRES_DB` names the app database (as it does in terminals that load `.env`). Without it, the tests' `TRUNCATE` could wipe the app data.
 
 After changing `requirements.txt`, rebuild the dev container (**Dev Containers: Rebuild Container**) and use `--build` with `docker compose run`, so both images get the new libraries.
 
