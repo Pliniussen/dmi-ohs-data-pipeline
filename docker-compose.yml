@@ -11,6 +11,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DMI_STATION_IDS: ${DMI_STATION_IDS:-06120}
+      DMI_INITIAL_LOOKBACK_HOURS: ${DMI_INITIAL_LOOKBACK_HOURS:-24}
     volumes:
       - ./sample_data:/dmi-ohs-data-pipeline/sample_data:ro
 

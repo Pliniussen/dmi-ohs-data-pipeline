@@ -9,4 +9,6 @@ def get_connection():
         dbname=os.environ["POSTGRES_DB"],
         user=os.environ["POSTGRES_USER"],
         password=os.environ["POSTGRES_PASSWORD"],
+        # Fail instead of hanging if the database cannot be reached.
+        connect_timeout=10,
     )

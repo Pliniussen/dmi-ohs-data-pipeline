@@ -6,10 +6,11 @@ from pathlib import Path
 import pytest
 
 from dmi_ohs.extract_transform import (
+    CATALOG_PATH,
     ExtractError,
+    filter_known_parameters,
     load_catalog,
     parse_observations,
-    validate_parameters,
 )
 
 FIXTURE = Path(__file__).resolve().parents[2] / "sample_data" / "odense-observations-2026-10-07.json"
@@ -36,14 +37,59 @@ def test_parses_fixture(payload):
 
 def test_fixture_parameters_are_in_catalog(payload):
     result = parse_observations(payload)
-    validate_parameters(result.observations, load_catalog())
+    kept, unknown = filter_known_parameters(result.observations, load_catalog())
+    assert kept == result.observations
+    assert unknown == []
 
 
-def test_unknown_parameter_is_reported(payload):
+def test_unknown_parameters_are_skipped(payload):
     payload["features"][0]["properties"]["parameterId"] = "not_a_parameter"
+    payload["features"][1]["properties"]["parameterId"] = "also_unknown"
     result = parse_observations(payload)
+    kept, unknown = filter_known_parameters(result.observations, load_catalog())
+    assert unknown == ["also_unknown", "not_a_parameter"]
+    assert kept == result.observations[2:]
+
+
+@pytest.fixture
+def catalog_file(tmp_path):
+    def write(catalog):
+        path = tmp_path / "catalog.json"
+        path.write_text(json.dumps(catalog), encoding="utf-8")
+        return path
+
+    return write
+
+
+@pytest.fixture
+def catalog():
+    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("key", ["parameters", "code_sets"])
+def test_catalog_missing_section(catalog, catalog_file, key):
+    del catalog[key]
+    with pytest.raises(ExtractError, match=key):
+        load_catalog(catalog_file(catalog))
+
+
+@pytest.mark.parametrize("key", ["description", "unit", "frequency"])
+def test_catalog_parameter_missing_field(catalog, catalog_file, key):
+    del catalog["parameters"]["temp_dew"][key]
+    with pytest.raises(ExtractError, match=f"temp_dew.*{key}"):
+        load_catalog(catalog_file(catalog))
+
+
+def test_catalog_description_must_be_a_list(catalog, catalog_file):
+    catalog["parameters"]["temp_dew"]["description"] = "one line"
+    with pytest.raises(ExtractError, match="description must be a list"):
+        load_catalog(catalog_file(catalog))
+
+
+def test_catalog_code_set_needs_parameter(catalog, catalog_file):
+    catalog["code_sets"]["not_a_parameter"] = {"0": "Zero"}
     with pytest.raises(ExtractError, match="not_a_parameter"):
-        validate_parameters(result.observations, load_catalog())
+        load_catalog(catalog_file(catalog))
 
 
 def test_null_value_is_allowed(payload):
@@ -135,7 +181,22 @@ def test_non_string_ids(payload):
         parse_observations(payload)
 
 
-def test_conflicting_station_coordinates(payload):
+def test_conflicting_station_coordinates_use_latest(payload):
+    # feature[0] and feature[1] share the latest observed time; the first one seen wins.
     payload["features"][1]["geometry"]["coordinates"] = [1.0, 2.0]
-    with pytest.raises(ExtractError, match="conflicting"):
-        parse_observations(payload)
+    result = parse_observations(payload)
+    station = result.stations[0]
+    assert (station.longitude, station.latitude) == (Decimal("10.3305"), Decimal("55.4749"))
+    assert len(result.warnings) == 1
+    assert "conflicting coordinates" in result.warnings[0]
+
+
+def test_conflicting_station_coordinates_newer_feature_wins(payload):
+    payload["features"][-1]["geometry"]["coordinates"] = [1.0, 2.0]
+    payload["features"][-1]["properties"]["observed"] = "2030-01-01T00:00:00Z"
+    station = parse_observations(payload).stations[0]
+    assert (station.longitude, station.latitude) == (Decimal("1.0"), Decimal("2.0"))
+
+
+def test_no_warnings_for_consistent_input(payload):
+    assert parse_observations(payload).warnings == []

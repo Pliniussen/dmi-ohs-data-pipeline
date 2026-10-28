@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -42,6 +42,7 @@ class ParsedObservations:
 
     stations: list[Station]
     observations: list[Observation]
+    warnings: list[str] = field(default_factory=list)
 
 
 def _require(mapping: Any, key: str, where: str) -> Any:
@@ -126,8 +127,11 @@ def parse_observations(payload: Any) -> ParsedObservations:
     if not isinstance(features, list) or not features:
         raise ExtractError("payload: no observation features")
 
-    # Keep one station per ID so we can spot conflicting locations.
+    # Keep one station per ID. If its location differs between features,
+    # the location from the latest observation wins and we warn about it.
     stations: dict[str, Station] = {}
+    station_seen_at: dict[str, datetime] = {}
+    conflicting: set[str] = set()
     # Keep every observation; each feature is a separate measurement.
     observations: list[Observation] = []
 
@@ -137,11 +141,6 @@ def parse_observations(payload: Any) -> ParsedObservations:
         properties = _require(feature, "properties", where)
         station = _parse_station(feature, where)
 
-        # Save the station the first time we see its ID.
-        known = stations.setdefault(station.station_id, station)
-        if known != station:
-            raise ExtractError(f"{where}: conflicting coordinates for station {station.station_id}")
-
         # These IDs tell us which parameter was measured and identify the record.
         parameter_id = _require(properties, "parameterId", where)
         observation_id = _require(feature, "id", where)
@@ -149,33 +148,65 @@ def parse_observations(payload: Any) -> ParsedObservations:
             raise ExtractError(f"{where}: id and parameterId must be strings")
 
         # Check and convert the values now so later code can use them directly.
-        observations.append(
-            Observation(
-                observation_id=observation_id,
-                station_id=station.station_id,
-                parameter_id=parameter_id,
-                observed_at=_parse_timestamp(_require(properties, "observed", where), where),
-                created_at=_parse_timestamp(_require(properties, "created", where), where),
-                value=_parse_value(_require(properties, "value", where), where),
-            )
+        observation = Observation(
+            observation_id=observation_id,
+            station_id=station.station_id,
+            parameter_id=parameter_id,
+            observed_at=_parse_timestamp(_require(properties, "observed", where), where),
+            created_at=_parse_timestamp(_require(properties, "created", where), where),
+            value=_parse_value(_require(properties, "value", where), where),
         )
+        observations.append(observation)
+
+        # Save the station the first time we see its ID, and replace it when a
+        # strictly newer observation reports it. Remember IDs with differing locations.
+        known = stations.get(station.station_id)
+        if known is not None and known != station:
+            conflicting.add(station.station_id)
+        if known is None or observation.observed_at > station_seen_at[station.station_id]:
+            stations[station.station_id] = station
+            station_seen_at[station.station_id] = observation.observed_at
+
+    warnings = [
+        f"station {station_id}: conflicting coordinates in input, using the latest "
+        f"({stations[station_id].longitude}, {stations[station_id].latitude})"
+        for station_id in sorted(conflicting)
+    ]
 
     # Return the unique stations and all observations as lists.
-    return ParsedObservations(list(stations.values()), observations)
+    return ParsedObservations(list(stations.values()), observations, warnings)
 
 
 def load_catalog(path: Path = CATALOG_PATH) -> dict:
-    """Read and decode the JSON catalog that defines valid parameter IDs."""
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Read the JSON catalog that defines valid parameter IDs and check its shape."""
+    catalog = json.loads(path.read_text(encoding="utf-8"))
+    parameters = _require(catalog, "parameters", "catalog")
+    code_sets = _require(catalog, "code_sets", "catalog")
+    if not isinstance(parameters, dict) or not isinstance(code_sets, dict):
+        raise ExtractError("catalog: parameters and code_sets must be objects")
+    for parameter_id, meta in parameters.items():
+        where = f"catalog parameter '{parameter_id}'"
+        # The description is a list of lines that the loader joins into one text.
+        if not isinstance(_require(meta, "description", where), list):
+            raise ExtractError(f"{where}: description must be a list")
+        _require(meta, "unit", where)
+        _require(meta, "frequency", where)
+    # Every code set must belong to a parameter, or the database foreign key fails.
+    orphans = sorted(set(code_sets) - set(parameters))
+    if orphans:
+        raise ExtractError(f"catalog: code sets for unknown parameters: {', '.join(orphans)}")
+    return catalog
 
 
-def validate_parameters(observations: list[Observation], catalog: dict) -> None:
-    """Fail if any observation uses a parameter absent from the catalog.
+def filter_known_parameters(
+    observations: list[Observation], catalog: dict
+) -> tuple[list[Observation], list[str]]:
+    """Split off observations whose parameter is absent from the catalog.
 
-    The catalog's "parameters" keys are the allowed parameter IDs. Sort the
-    unknown IDs so the error message is always in the same order.
+    Returns the observations to keep and the sorted unknown parameter IDs, so
+    one new DMI parameter cannot block the rest of the load.
     """
     known = catalog["parameters"]
-    missing = sorted({o.parameter_id for o in observations} - set(known))
-    if missing:
-        raise ExtractError(f"parameters missing from catalog: {', '.join(missing)}")
+    kept = [o for o in observations if o.parameter_id in known]
+    unknown = sorted({o.parameter_id for o in observations} - set(known))
+    return kept, unknown
