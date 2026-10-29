@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import psycopg
+
 from dmi_ohs.api import FetchError, fetch_observations
 from dmi_ohs.database import get_connection
 from dmi_ohs.extract_transform import (
@@ -44,6 +46,19 @@ def station_ids_from_env() -> list[str]:
     return station_ids
 
 
+def lookback_from_env() -> timedelta:
+    """Read DMI_INITIAL_LOOKBACK_HOURS, a positive number of hours (default 24)."""
+    raw = os.environ.get("DMI_INITIAL_LOOKBACK_HOURS", "24")
+    try:
+        hours = float(raw)
+    except ValueError:
+        hours = float("nan")
+    # The comparison is false for NaN, so text and "nan" are rejected too.
+    if not 0 < hours < float("inf"):
+        raise PipelineError(f"DMI_INITIAL_LOOKBACK_HOURS must be a positive number, got '{raw}'")
+    return timedelta(hours=hours)
+
+
 def fetch_window(connection, station_id: str, lookback: timedelta, now: datetime) -> tuple[datetime, datetime]:
     """Continue from the newest stored observation, or look back from now if there is none."""
     latest = latest_observed_at(connection, station_id)
@@ -79,10 +94,16 @@ def describe(result: LoadResult) -> str:
 def run_file(input_path: Path) -> LoadResult:
     """Load observations from a saved JSON file."""
     catalog = load_catalog()
-    payload = json.loads(input_path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        # ValueError covers invalid JSON.
+        raise PipelineError(f"{input_path}: {error}") from error
     connection = get_connection()
     try:
         result = load_payload(connection, payload, catalog)
+    except ExtractError as error:
+        raise PipelineError(f"{input_path}: {error}") from error
     finally:
         connection.close()
     print(f"{input_path.name}: {describe(result)}")
@@ -98,7 +119,7 @@ def run_api(fetch=fetch_observations) -> dict[str, LoadResult | None]:
     station failed.
     """
     station_ids = station_ids_from_env()
-    lookback = timedelta(hours=float(os.environ.get("DMI_INITIAL_LOOKBACK_HOURS", "24")))
+    lookback = lookback_from_env()
     catalog = load_catalog()
     results: dict[str, LoadResult | None] = {}
     failed: list[str] = []
@@ -106,15 +127,17 @@ def run_api(fetch=fetch_observations) -> dict[str, LoadResult | None]:
     connection = get_connection()
     try:
         for station_id in station_ids:
-            start, end = fetch_window(connection, station_id, lookback, datetime.now(timezone.utc))
             try:
+                start, end = fetch_window(connection, station_id, lookback, datetime.now(timezone.utc))
                 payload = fetch(station_id, start, end)
                 if not payload["features"]:
                     print(f"Station {station_id}: no new observations from {start} to {end}.")
                     results[station_id] = None
                     continue
                 result = load_payload(connection, payload, catalog)
-            except (FetchError, ExtractError) as error:
+            # A database error has already rolled back this station's
+            # transaction, so the connection can go on to the next station.
+            except (FetchError, ExtractError, psycopg.Error) as error:
                 warn(f"station {station_id} failed: {error}")
                 failed.append(station_id)
                 continue

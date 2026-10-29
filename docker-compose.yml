@@ -9,7 +9,7 @@ services:
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       DMI_STATION_IDS: ${DMI_STATION_IDS:-06120}
       DMI_INITIAL_LOOKBACK_HOURS: ${DMI_INITIAL_LOOKBACK_HOURS:-24}
@@ -25,7 +25,7 @@ services:
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_DB: ${TEST_POSTGRES_DB:-dmi_ohs_test}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./sample_data:/dmi-ohs-data-pipeline/sample_data:ro
@@ -36,10 +36,10 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       TEST_POSTGRES_DB: ${TEST_POSTGRES_DB:-dmi_ohs_test}
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
+    # No published port: other services reach the database as db:5432
+    # on the Compose network.
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
@@ -49,8 +49,8 @@ services:
       test:
         - CMD-SHELL
         - >-
-          pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} &&
-          psql -v ON_ERROR_STOP=1 -U ${POSTGRES_USER}
+          pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB} &&
+          psql -v ON_ERROR_STOP=1 -U ${POSTGRES_USER:-admin}
           -d ${TEST_POSTGRES_DB:-dmi_ohs_test}
           -c 'SELECT 1 FROM observations LIMIT 0' >/dev/null
       interval: 5s
@@ -58,7 +58,7 @@ services:
       retries: 5
 
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:9.18.0
     depends_on:
       db:
         condition: service_healthy
@@ -66,7 +66,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_USER_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro

@@ -97,7 +97,7 @@ Data fra databasen i ``db`` bliver gemt i ``postgres_data`` volume. ``pgadmin`` 
 
 ## Lav .env fil
 - I projektets root, skal du lave en ny fil, der hedder ``.env``, den indeholder miljø variabler for projektet. ``.env`` filen indeholder hemmeligheder som koder eller tokens, som ikke skal deles offentligt af sikkerhedshensyn. ``.env`` er derfor inkluderet i ``.gitignore``, så de ikke bliver synced med git.
-- De følgende miljøvariable (environment variables) skal sættes i ``.env``. ``POSTGRES_HOST=db`` og ``POSTGRES_PORT=5432`` skal ikke ændres, men resten af værdierne er vilkårlige.
+- De følgende miljøvariable (environment variables) skal sættes i ``.env``. ``POSTGRES_HOST=db``, ``POSTGRES_PORT=5432`` og ``POSTGRES_USER=admin`` skal ikke ændres, men resten af værdierne er vilkårlige. ``POSTGRES_USER`` er som standard ``admin``, fordi pgAdmin-forbindelsen i ``pgadmin/servers.json`` bruger det brugernavn; ændres det, skal ``servers.json`` også ændres.
 
 ```
 POSTGRES_DB=postgres_db
@@ -109,6 +109,8 @@ POSTGRES_PASSWORD=password
 POSTGRES_HOST=db
 
 POSTGRES_PORT=5432
+
+TEST_POSTGRES_DB=dmi_ohs_test
 
 PGADMIN_USER_EMAIL=admin@example.com
 
@@ -219,6 +221,8 @@ Der er en pgAdmin container sat up i projektet. For at åbne den:
 3. Åben din browser og gå ind på http://localhost:8080/. Det kan godt tage lidt tid at få forbindelse
 4. Login med pgAdmin credentials fra ``.env`` filen
 5. Forbindelsen til databasen er allerede konfigureret. Når du connecter med databasen vil du blive promptet til at indtaste et password. Det er postgres passwordet fra ``.env`` filen
+
+pgAdmin (port 8080) er kun tilgængelig fra din egen maskine (``127.0.0.1``), ikke fra andre maskiner på netværket. PostgreSQL har ingen port udadtil: ``app``, ``tests`` og ``pgadmin`` når databasen som ``db:5432`` på Docker Compose-netværket, og ``psql`` kan køres med ``docker compose exec db psql -U admin -d postgres_db``.
 
 ---
 ## Databaseskema

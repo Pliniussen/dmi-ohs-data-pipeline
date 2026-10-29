@@ -15,7 +15,7 @@ station's newest stored observation. A saved JSON file can be loaded instead wit
 ```mermaid
 flowchart TD
     W["latest_observed_at (fetch window)"] --> A
-    A["fetch_observations (DMI API) or --file JSON"] --> B["main.run"]
+    A["fetch_observations (DMI API) or --file JSON"] --> B["main.run_api / main.run_file"]
     B --> C["parse_observations"]
     C --> D["Validate fields, convert types, deduplicate stations"]
     B --> E["load_catalog (with shape checks)"]
@@ -126,14 +126,19 @@ erDiagram
   none, and ends now.
 - **`station_ids_from_env()`** reads the comma-separated `DMI_STATION_IDS`,
   dropping blanks and repeats.
+- **`lookback_from_env()`** reads `DMI_INITIAL_LOOKBACK_HOURS` and rejects
+  anything that is not a positive number.
 - **`load_payload(connection, payload, catalog)`** parses, filters, and loads
   one payload, and prints its warnings.
 - **`run_api(fetch)`** fetches and loads each station in its own transaction.
-  It returns each station's `LoadResult` (or `None` when there were no new
-  observations), and raises `PipelineError` after the loop if any station failed.
-- **`run_file(input_path)`** loads a saved JSON file.
+  An API, input or database error fails only that station. It returns each
+  station's `LoadResult` (or `None` when there were no new observations), and
+  raises `PipelineError` after the loop if any station failed.
+- **`run_file(input_path)`** loads a saved JSON file, and raises
+  `PipelineError` if the file is missing or its content is invalid.
 - **`main()`** calls `run_file()` when `--file` is given, otherwise `run_api()`,
-  and exits with an error message if a station failed.
+  and exits with an error message instead of a traceback when a station,
+  setting or input file is wrong.
 
 ## 5. Tests and how to run them
 
@@ -174,7 +179,9 @@ despite a `next` link, `FetchError` on failures, and the retry configuration.
 ### Unit tests — `tests/unit/test_main.py`
 
 Check that `DMI_STATION_IDS` is split on commas, trimmed, deduplicated in
-order, defaults to `06120`, and is rejected when it contains no IDs.
+order, defaults to `06120`, and is rejected when it contains no IDs. Check that
+`DMI_INITIAL_LOOKBACK_HOURS` defaults to 24 and must be a positive number, and
+that a missing or invalid `--file` input gives a clean error message.
 
 ### Integration tests — `tests/integration/`
 
@@ -195,8 +202,10 @@ order, defaults to `06120`, and is rejected when it contains no IDs.
   second run, and that the overlap does not duplicate rows.
 - **`test_run_api_loads_each_station_with_its_own_window`** checks that a
   stored station continues while a new station uses the lookback.
-- **`test_run_api_continues_after_a_failing_station`** checks that one failing
-  station doesn't stop the others.
+- **`test_run_api_continues_after_a_failing_station`** and
+  **`test_run_api_continues_after_a_database_error`** check that one failing
+  station (API or database error) doesn't stop the others, and that the failed
+  station's rows are rolled back.
 - **`test_run_api_with_no_new_observations`** and
   **`test_run_api_skips_unknown_parameters`** cover empty API results and
   unknown parameters.

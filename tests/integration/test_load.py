@@ -11,6 +11,7 @@ import pytest
 from dmi_ohs.database import get_connection
 from dmi_ohs.extract_transform import Station, load_catalog, parse_observations
 from dmi_ohs.load import latest_observed_at, load
+from dmi_ohs import main
 from dmi_ohs.api import FetchError
 from dmi_ohs.main import PipelineError, run_api, run_file
 
@@ -193,6 +194,32 @@ def test_run_api_continues_after_a_failing_station(connection, parsed, payload, 
     # The failing station did not stop the other one from loading.
     assert count(connection, "observations") == len(parsed.observations)
     assert "station 06180 failed: DMI is down" in capsys.readouterr().err
+
+
+def test_run_api_continues_after_a_database_error(connection, parsed, payload, monkeypatch, capsys):
+    monkeypatch.setenv("DMI_STATION_IDS", "06180,06120")
+    fetch = FakeFetch({"06180": as_station(payload, "06180"), "06120": payload})
+    real_load_payload = main.load_payload
+
+    def failing_load_payload(conn, station_payload, catalog):
+        # Write some rows first, so the test also checks that they are rolled back.
+        if station_payload["features"][0]["properties"]["stationId"] == "06180":
+            with conn.transaction():
+                real_load_payload(conn, station_payload, catalog)
+                raise psycopg.errors.CheckViolation("simulated constraint error")
+        return real_load_payload(conn, station_payload, catalog)
+
+    monkeypatch.setattr(main, "load_payload", failing_load_payload)
+
+    with pytest.raises(PipelineError, match="06180"):
+        run_api(fetch=fetch)
+
+    # 06180's rows were rolled back, and 06120 still loaded on the same connection.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT DISTINCT station_id FROM observations")
+        assert cursor.fetchall() == [("06120",)]
+    assert count(connection, "observations") == len(parsed.observations)
+    assert "station 06180 failed: simulated constraint error" in capsys.readouterr().err
 
 
 def test_run_api_with_no_new_observations(connection, monkeypatch):

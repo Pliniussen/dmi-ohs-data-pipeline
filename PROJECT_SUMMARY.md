@@ -30,7 +30,7 @@ These were chosen deliberately when API extraction was added:
 - **Skip unknown parameters instead of failing.** One new DMI parameter should not block all other data. Add the parameter to the catalog to start loading it.
 - **Overwrite moved stations instead of failing.** A station move is unlikely in the near future. If it happens, the warning makes it visible and the newest coordinates are kept. Station history (DMI's `validFrom`/`validTo`) is not modelled.
 - **Warn about duplicate measurements, don't prevent them.** It is not yet known whether DMI keeps the same observation ID when it corrects a value. If duplicates show up in practice, add a unique constraint on `(station_id, parameter_id, observed_at)` and change the observation upsert to target it. That is a schema change.
-- **One transaction per station.** A station that fails (API error or bad data) does not roll back or block the others. The run still exits with an error, so a scheduler can notice.
+- **One transaction per station.** A station that fails (API error, bad data or a database error) does not roll back or block the others. The run still exits with an error, so a scheduler can notice.
 
 ### DMI API behaviour
 
@@ -41,6 +41,8 @@ Observed on `https://opendataapi.dmi.dk/v2/metObs/collections/observation/items`
 - The `datetime=start/end` range includes both ends; a 08:00–09:00 query returns rows observed at 08:00 and at 09:00.
 - A `next` link is included even on the last, short page, so paging stops on page size instead (`limit=10000`, normally one page per run).
 - Station coordinates are taken from the observation features. The station API (`.../collections/station/items`) is not called; `sample_data/odense-station.json` shows that station 06120 has had several coordinate periods since 1959.
+- Observations are published quickly: in the first 24 hours loaded (2026-10-28/29), `created - observed` was about 25 s median and under 40 s for every parameter, so the one-hour overlap has a large margin.
+- Station 06120 reports 24 of the 51 catalog parameters, about 86 rows per hour. `weather` and `cloud_height` are only reported some of the time, so the number of rows per hour varies (80–92).
 
 ## Configuration
 
@@ -49,7 +51,8 @@ Settings come from environment variables, which Compose reads from `.env`. `.env
 | Variable | Default | Meaning |
 |---|---|---|
 | `DMI_STATION_IDS` | `06120` | Comma-separated DMI station IDs to fetch, e.g. `06120,06180`. Kept as text because the leading zero is part of the ID. |
-| `DMI_INITIAL_LOOKBACK_HOURS` | `24` | How far back to fetch for a station with no stored observations (first run, or newly added station). Ignored once the station has data. Set it higher (e.g. `720` for 30 days) before the first run to start with more history. |
+| `DMI_INITIAL_LOOKBACK_HOURS` | `24` | How far back to fetch for a station with no stored observations (first run, or newly added station). Ignored once the station has data. Set it higher (e.g. `720` for 30 days) before the first run to start with more history. Must be a positive number. |
+| `POSTGRES_USER` | `admin` | Database user. Keep `admin`: `pgadmin/servers.json` connects with that name and cannot read environment variables. |
 | `TEST_POSTGRES_DB` | `dmi_ohs_test` | Database used by the tests. Must differ from `POSTGRES_DB`. |
 
 To add a station, add its ID to `DMI_STATION_IDS` and run the pipeline; no code change is needed.
@@ -113,7 +116,7 @@ volume and creating it again.
 
 - `reference_data/dmi-parameter-catalog.json` contains static parameter metadata and code mappings.
 - `sample_data/odense-observations-2026-10-07.json` contains saved observations for Odense station `06120`.
-- The saved API responses are strict JSON. The `.command.txt` files contain the curl commands that produced them; run them from the project root to refresh the fixtures in `sample_data/`.
+- The saved API responses are strict JSON. Each one records the request that produced it in its `links` list, under `"rel": "self"`. To refresh a fixture, run from the project root `curl --silent "<self URL>" | python3 -m json.tool > sample_data/<file>.json`.
 
 Source documentation:  
 https://www.dmi.dk/friedata/dokumentation/meteorological-observations-data  
@@ -124,18 +127,21 @@ https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
 Completed:
 
 - PostgreSQL and Docker Compose development environment.
-- Station, parameter, value-code, and observation tables with foreign keys and duplicate protection.
+- Station, parameter, value-code, and observation tables with foreign keys. Observation IDs are unique; duplicate measurements under different IDs are only warned about.
 - Schema bootstrap wiring through PostgreSQL's initialization directory.
 - JSON parsing and validation for observation features, station coordinates, timestamps, and values.
 - Validation of the catalog's structure, and skipping (with a warning) of observations whose parameter is missing from it.
 - Transactional, idempotent upserts for catalog data, stations, and observations, with warnings for moved stations and duplicate measurements.
 - Incremental fetching from the DMI observation API with pagination, timeouts, and retries.
 - A command-line pipeline that fetches from the API by default or loads a JSON file with `--file`, then reports input row counts submitted to the upserts.
-- Unit tests for parsing, input and catalog validation, and the API client (using a fake HTTP session), plus PostgreSQL integration tests for connectivity, loading, repeat loads, rollback, warnings, and the incremental fetch window.
+- Clean error messages, without a traceback, for invalid settings and unreadable or invalid `--file` input.
+- Unit tests for parsing, input and catalog validation, settings, file errors, and the API client (using a fake HTTP session), plus PostgreSQL integration tests for connectivity, loading, repeat loads, rollback, warnings, per-station failures (API and database errors), and the incremental fetch window.
 
-Not yet verified:
+Verified on 2026-10-29 (WSL, fresh volume):
 
-- The integration tests for the API, multi-station, warning, and incremental-window features have been written but not yet run against PostgreSQL. Run `docker compose run --build --rm tests` from WSL, then run `docker compose run --build --rm app` twice: the second run should fetch only about the last hour per station.
+- `docker compose run --build --rm tests`: all tests passed against PostgreSQL, with 95% coverage.
+- Two real API runs for 06120. The first loaded 2,062 observations (24-hour lookback). The second loaded 95, all of them overlap rows that were already stored. No warnings were printed.
+- Queries A–D in [Checking the data](#checking-the-data) found no gaps and no duplicate measurements. The longest publishing delay was 36 s.
 
 Not yet completed:
 
@@ -147,11 +153,11 @@ Not yet completed:
 ### What the Docker and PostgreSQL names mean
 
 - **Docker Compose** reads `docker-compose.yml` and starts the containers described there. The project has an `app` service for the pipeline, a `tests` service for pytest, a `db` service running PostgreSQL, and a `pgadmin` service for the database browser.
-- **PostgreSQL** is the database server software. The Compose service is named `db`; containers on the Compose network use that name to reach the server.
+- **PostgreSQL** is the database server software. The Compose service is named `db`; containers on the Compose network use that name to reach the server. Its port is not published to the host: everything that uses the database runs as a Compose service. A future dashboard should do the same, connecting to `db:5432` and publishing only its own web port (e.g. `127.0.0.1:3000:3000`). For `psql`, use `docker compose exec db psql -U admin -d postgres_db`.
 - **`POSTGRES_HOST`** is the server address. In this project, `.env.example` sets it to `db`. **`POSTGRES_DB`** is the name of one database inside that server; `.env.example` sets it to `postgres_db`. `POSTGRES_PORT` is the server port, normally `5432`.
 - The app and tests read these environment variables in `dmi_ohs/database.py`. `docker-compose.yml` passes the values into each container. `${POSTGRES_DB}` means “use the value supplied by the environment or `.env` file.”
 - **`postgres_data`** is a Docker-managed persistent volume mounted at PostgreSQL's data directory. PostgreSQL stores its internal files there for all databases on that server. It is storage used by the server, not a database to connect to or a directory to edit by hand.
-- **pgAdmin** is a separate web interface that connects to PostgreSQL. It helps browse databases and run queries; it does not store the pipeline's database records. It is available at `http://localhost:8080` while its service is running.
+- **pgAdmin** is a separate web interface that connects to PostgreSQL. It helps browse databases and run queries; it does not store the pipeline's database records. It is available at `http://localhost:8080` (this machine only) while its service is running.
 
 ### Dev container and Compose commands
 
@@ -183,6 +189,56 @@ The Postgres image creates the initial database named by `POSTGRES_DB` and runs 
 PostgreSQL only runs initialization files when its data directory is empty. To use this new setup with an existing volume, run `docker compose down -v`, then run `docker compose run --build --rm tests`.
 
 **Warning:** `docker compose down -v` deletes `postgres_data`, including both databases and their data, and `pgadmin_data`, including pgAdmin settings. Use it only while those data can be discarded. Ordinary test runs do not delete the app database; the tests only truncate tables in the separate test database.
+
+## Checking the data
+
+Run these queries against the app database after a few days of collection and whenever a station is added. Either:
+
+- open pgAdmin (`docker compose up -d pgadmin`, http://localhost:8080), expand *Servers → Postgres → Databases → postgres_db*, right-click it, choose **Query Tool**, paste a query and press **F5**; or
+- run `docker compose exec db psql -U admin -d postgres_db` in WSL and paste the query.
+
+**A. Coverage per station.** Expect one row per station, with `latest` close to the time of the last run.
+
+```sql
+SELECT station_id, count(*) AS rows, min(observed_at) AS earliest, max(observed_at) AS latest
+FROM observations
+GROUP BY station_id;
+```
+
+**B. Publishing delay per parameter.** `created_at - observed_at` is how long DMI took to publish a measurement. A parameter whose `max_delay` is longer than the one-hour overlap (`OVERLAP` in `dmi_ohs/main.py`) can be missed by the incremental fetch window.
+
+```sql
+SELECT o.parameter_id, p.frequency, count(*) AS rows,
+       max(o.observed_at) AS latest,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY o.created_at - o.observed_at) AS median_delay,
+       max(o.created_at - o.observed_at) AS max_delay
+FROM observations o
+JOIN parameters p USING (parameter_id)
+GROUP BY o.parameter_id, p.frequency
+ORDER BY max_delay DESC;
+```
+
+**C. Gaps per hour.** Full hours should have about the same `rows` and `parameters`. Only the first and newest hours are partial. A dip in between means rows were missed between runs.
+
+```sql
+SELECT date_trunc('hour', observed_at) AS hour,
+       count(*) AS rows, count(DISTINCT parameter_id) AS parameters
+FROM observations
+WHERE station_id = '06120'
+GROUP BY 1
+ORDER BY 1;
+```
+
+**D. Duplicate measurements.** This should be empty. Any rows show that DMI re-issued a measurement under a new ID (see the design decisions).
+
+```sql
+SELECT station_id, parameter_id, observed_at, count(*) AS n,
+       array_agg(observation_id ORDER BY created_at) AS ids,
+       array_agg(value ORDER BY created_at) AS values
+FROM observations
+GROUP BY station_id, parameter_id, observed_at
+HAVING count(*) > 1;
+```
 
 ## Known limitations
 
