@@ -1,38 +1,39 @@
-# DMI OHS Data Pipeline — Project Presentation
+# DMI OHS-datapipeline — Projektpræsentation
 
-## 1. What the project does
+## 1. Hvad projektet gør
 
-This Python pipeline fetches DMI observations for one or more stations from
-the DMI observation API, validates the station and measurement fields, converts them
-into typed records, deduplicates stations by ID, skips parameters missing from
-a local DMI catalog, and upserts the data into PostgreSQL. This is structural
-normalization, not measurement unit conversion. Each run continues from each
-station's newest stored observation. A saved JSON file can be loaded instead with
-`--file`.
+Denne Python-pipeline henter DMI-observationer for en eller flere stationer fra
+DMI's observations-API, validerer stations- og målingsfelterne, konverterer dem
+til typede records, deduplikerer stationer efter ID, springer parametre over,
+som mangler i et lokalt DMI-katalog, og upserter dataene i PostgreSQL. Der er
+tale om strukturel normalisering, ikke konvertering af måleenheder. Hver kørsel
+fortsætter fra den nyeste gemte observation for hver station. En gemt JSON-fil
+kan indlæses i stedet med `--file`.
 
-## 2. Pipeline flow
+## 2. Pipelinens flow
 
 ```mermaid
 flowchart TD
-    W["latest_observed_at (fetch window)"] --> A
-    A["fetch_observations (DMI API) or --file JSON"] --> B["main.run_api / main.run_file"]
+    W["latest_observed_at (hentevindue)"] --> A
+    A["fetch_observations (DMI API) eller --file JSON"] --> B["main.run_api / main.run_file"]
     B --> C["parse_observations"]
-    C --> D["Validate fields, convert types, deduplicate stations"]
-    B --> E["load_catalog (with shape checks)"]
+    C --> D["Valider felter, konverter typer, dedupliker stationer"]
+    B --> E["load_catalog (med strukturtjek)"]
     D --> F["filter_known_parameters"]
     E --> F
     F --> G["load"]
     G --> H["PostgreSQL"]
-    H --> I["Report submitted row counts"]
+    H --> I["Rapportér antal indsendte rækker"]
 ```
 
-The loader writes parameter metadata, value-code descriptions, stations, and
-observations in that order, inside one transaction. Upserts make repeated
-loads safe; a failure rolls the transaction back (e.g. if a station row is rejected because its longitude violates the database constraint).
-Moved stations, duplicate measurements, and skipped parameters are reported
-as warnings instead of stopping the load.
+Loaderen skriver parametermetadata, beskrivelser af værdikoder, stationer og
+observationer i den rækkefølge, inden for én transaktion. Upserts gør det
+sikkert at indlæse de samme data flere gange; en fejl ruller transaktionen
+tilbage (fx hvis en stationsrække afvises, fordi dens længdegrad overtræder
+databasens constraint). Flyttede stationer, dublerede målinger og oversprungne
+parametre rapporteres som advarsler i stedet for at stoppe indlæsningen.
 
-## 3. Database schema
+## 3. Databaseskema
 
 ```mermaid
 erDiagram
@@ -62,171 +63,180 @@ erDiagram
         TEXT parameter_id FK
         TIMESTAMPTZ observed_at
         TIMESTAMPTZ created_at
-        NUMERIC value "nullable"
+        NUMERIC value "kan være null"
     }
 ```
 
-- **`stations`** stores one row per station and its longitude/latitude. The
-  database checks that coordinates are within valid geographic ranges.
-- **`parameters`** stores catalog metadata: description, unit, and frequency.
-- **`parameter_value_codes`** stores parameter-specific meanings for coded
-  numeric values. Its composite primary key is `(parameter_id, code)`.
-- **`observations`** stores each API measurement. Its station and parameter
-  foreign keys connect it to the reference tables; `value` can be null.
-- Indexes on `(station_id, observed_at)` and `(parameter_id, observed_at)`
-  support common observation lookups.
+- **`stations`** gemmer én række pr. station med dens længde- og breddegrad.
+  Databasen tjekker, at koordinaterne ligger inden for gyldige geografiske
+  intervaller.
+- **`parameters`** gemmer katalogmetadata: beskrivelse, enhed og frekvens.
+- **`parameter_value_codes`** gemmer parameterspecifikke betydninger af kodede
+  numeriske værdier. Dens sammensatte primærnøgle er `(parameter_id, code)`.
+- **`observations`** gemmer hver måling fra API'et. Dens fremmednøgler til
+  station og parameter forbinder den med referencetabellerne; `value` kan være
+  null.
+- Indekser på `(station_id, observed_at)` og `(parameter_id, observed_at)`
+  understøtter almindelige opslag i observationerne.
 
-## 4. Function walkthrough
+## 4. Gennemgang af funktionerne
 
 ### `dmi_ohs/extract_transform.py`
 
-- **`_require(mapping, key, where)`** checks that an input object contains a
-  required field and raises a location-specific `ExtractError` otherwise.
-- **`_parse_timestamp(raw, where)`** requires a timezone-aware timestamp string
-  and accepts `Z` as UTC.
-- **`_parse_value(raw, where)`** accepts a finite number or `null`, converts
-  numbers to `Decimal`, and rejects booleans and other types.
-- **`_parse_station(feature, where)`** reads station ID and GeoJSON coordinates,
-  validates their types and geographic ranges, converts coordinates to
-  `Decimal`, and returns a `Station`.
-- **`parse_observations(payload)`** validates each feature and creates
-  typed `Observation` records, converting numeric values to `Decimal` (while
-  preserving `null`) and parsing timezone-aware timestamps. It deduplicates
-  stations by ID; if one station's coordinates differ within the input, it
-  keeps those of the latest observation and returns a warning. It keeps every
-  observation and does not convert measurement units.
-- **`load_catalog(path)`** reads the local parameter-catalog JSON and checks
-  that its sections and parameter fields are present.
-- **`filter_known_parameters(observations, catalog)`** returns the
-  observations whose parameter is in the catalog, plus the sorted unknown IDs.
+- **`_require(mapping, key, where)`** tjekker, at et inputobjekt indeholder et
+  påkrævet felt, og rejser ellers en `ExtractError`, der angiver placeringen.
+- **`_parse_timestamp(raw, where)`** kræver en tidsstempelstreng med tidszone
+  og accepterer `Z` som UTC.
+- **`_parse_value(raw, where)`** accepterer et endeligt tal eller `null`,
+  konverterer tal til `Decimal` og afviser booleans og andre typer.
+- **`_parse_station(feature, where)`** læser stations-ID og GeoJSON-koordinater,
+  validerer deres typer og geografiske intervaller, konverterer koordinaterne
+  til `Decimal` og returnerer en `Station`.
+- **`parse_observations(payload)`** validerer hver feature og opretter typede
+  `Observation`-records, hvor numeriske værdier konverteres til `Decimal`
+  (mens `null` bevares) og tidsstempler med tidszone parses. Den deduplikerer
+  stationer efter ID; hvis en stations koordinater varierer i inputtet, beholder
+  den koordinaterne fra den seneste observation og returnerer en advarsel. Den
+  beholder alle observationer og konverterer ikke måleenheder.
+- **`load_catalog(path)`** læser den lokale JSON-fil med parameterkataloget og
+  tjekker, at dens sektioner og parameterfelter er til stede.
+- **`filter_known_parameters(observations, catalog)`** returnerer de
+  observationer, hvis parameter findes i kataloget, samt de sorterede ukendte
+  ID'er.
 
 ### `dmi_ohs/api.py`
 
-- **`fetch_observations(station_id, start, end, session)`** requests the
-  observation API page by page until a page comes back short, and merges the
-  pages into one FeatureCollection. Failures raise `FetchError`.
-- **`make_session()`** creates an HTTP session that retries rate limits,
-  server errors, and dropped connections with backoff.
+- **`fetch_observations(station_id, start, end, session)`** henter
+  observations-API'et side for side, indtil en side kommer tilbage ufuldstændig,
+  og samler siderne i én FeatureCollection. Fejl rejser `FetchError`.
+- **`make_session()`** opretter en HTTP-session, der prøver igen med backoff
+  ved rate limits, serverfejl og afbrudte forbindelser.
 
 ### `dmi_ohs/load.py`
 
-- **`load(connection, parsed, catalog)`** prepares catalog, station, and
-  observation rows; upserts the four table groups in foreign-key order within
-  one transaction; and returns the number of input rows submitted per group.
-  Those counts are not counts of newly inserted or changed database rows. It
-  also warns when a stored station has moved or a measurement is stored under
-  more than one observation ID.
-- **`latest_observed_at(connection, station_id)`** returns the newest stored
-  observation time for a station.
+- **`load(connection, parsed, catalog)`** forbereder katalog-, stations- og
+  observationsrækker; upserter de fire tabelgrupper i fremmednøgle-rækkefølge
+  inden for én transaktion; og returnerer antallet af indsendte inputrækker pr.
+  gruppe. Disse tal er ikke antallet af nyindsatte eller ændrede rækker i
+  databasen. Den advarer også, når en gemt station er flyttet, eller når en
+  måling er gemt under mere end ét observations-ID.
+- **`latest_observed_at(connection, station_id)`** returnerer tidspunktet for
+  den nyeste gemte observation for en station.
 
 ### `dmi_ohs/main.py`
 
-- **`fetch_window(connection, station_id, lookback, now)`** starts one hour
-  before the newest stored observation, or `lookback` before now if there is
-  none, and ends now.
-- **`station_ids_from_env()`** reads the comma-separated `DMI_STATION_IDS`,
-  dropping blanks and repeats.
-- **`lookback_from_env()`** reads `DMI_INITIAL_LOOKBACK_HOURS` and rejects
-  anything that is not a positive number.
-- **`load_payload(connection, payload, catalog)`** parses, filters, and loads
-  one payload, and prints its warnings.
-- **`run_api(fetch)`** fetches and loads each station in its own transaction.
-  An API, input or database error fails only that station. It returns each
-  station's `LoadResult` (or `None` when there were no new observations), and
-  raises `PipelineError` after the loop if any station failed.
-- **`run_file(input_path)`** loads a saved JSON file, and raises
-  `PipelineError` if the file is missing or its content is invalid.
-- **`run_every(interval)`** checks the settings once, then calls `run_api()`
-  every `interval` until it is stopped. A run that fails because of the API or
-  the database is reported, and the loop waits for the next run. Runs keep a
-  fixed rhythm, and a run that overruns the interval skips the missed slots.
-  The `collector` Compose service uses it.
-- **`main()`** calls `run_every()` when `--every MINUTES` is given,
-  `run_file()` when `--file` is given, otherwise `run_api()` once. It exits
-  with an error message instead of a traceback when a station, setting or
-  input file is wrong.
+- **`fetch_window(connection, station_id, lookback, now)`** starter én time før
+  den nyeste gemte observation, eller `lookback` før nu, hvis der ikke er
+  nogen, og slutter nu.
+- **`station_ids_from_env()`** læser den kommaseparerede `DMI_STATION_IDS` og
+  fjerner tomme værdier og gentagelser.
+- **`lookback_from_env()`** læser `DMI_INITIAL_LOOKBACK_HOURS` og afviser alt,
+  der ikke er et positivt tal.
+- **`load_payload(connection, payload, catalog)`** parser, filtrerer og indlæser
+  én payload og udskriver dens advarsler.
+- **`run_api(fetch)`** henter og indlæser hver station i sin egen transaktion.
+  En API-, input- eller databasefejl får kun den pågældende station til at
+  fejle. Den returnerer hver stations `LoadResult` (eller `None`, når der ikke
+  var nye observationer), og rejser `PipelineError` efter løkken, hvis nogen
+  station fejlede.
+- **`run_file(input_path)`** indlæser en gemt JSON-fil og rejser
+  `PipelineError`, hvis filen mangler, eller dens indhold er ugyldigt.
+- **`run_every(interval)`** tjekker indstillingerne én gang og kalder derefter
+  `run_api()` hvert `interval`, indtil den stoppes. En kørsel, der fejler på
+  grund af API'et eller databasen, rapporteres, og løkken venter på næste
+  kørsel. Kørslerne holder en fast rytme, og en kørsel, der overskrider
+  intervallet, springer de missede tidspunkter over. Compose-servicen
+  `collector` bruger den.
+- **`main()`** kalder `run_every()`, når `--every MINUTES` er angivet,
+  `run_file()`, når `--file` er angivet, og ellers `run_api()` én gang. Den
+  afslutter med en fejlmeddelelse i stedet for en traceback, når en station,
+  indstilling eller inputfil er forkert.
 
-## 5. Tests and how to run them
+## 5. Tests og hvordan de køres
 
-Run the project test service with:
+Kør projektets test-service med:
 
 ```sh
 docker compose run --build --rm tests
 ```
 
-The service runs `pytest --cov=dmi_ohs`. PostgreSQL must be available through
-Docker Compose. The `tests` service connects to a separate database on the same
-PostgreSQL server, named by `TEST_POSTGRES_DB` (default `dmi_ohs_test`). On the
-first initialization of an empty volume, `database/init-test-db.sh` creates
-that database and applies the same `database/schema.sql` as the app database.
-Integration-test cleanup truncates only tables in the test database.
+Servicen kører `pytest --cov=dmi_ohs`. PostgreSQL skal være tilgængelig via
+Docker Compose. `tests`-servicen forbinder til en separat database på den samme
+PostgreSQL-server, navngivet af `TEST_POSTGRES_DB` (standard `dmi_ohs_test`).
+Ved første initialisering af et tomt volume opretter `database/init-test-db.sh`
+den database og anvender det samme `database/schema.sql` som app-databasen.
+Oprydningen efter integrationstests tømmer kun tabeller i testdatabasen.
 
-PostgreSQL initialization files do not run again for an existing data volume.
-Recreating it with `docker compose down -v` deletes both databases and pgAdmin
-settings, so only do this while that data can be discarded.
+PostgreSQL's initialiseringsfiler køres ikke igen for et eksisterende
+data-volume. At genskabe det med `docker compose down -v` sletter begge
+databaser og pgAdmin-indstillingerne, så gør det kun, når de data kan undværes.
 
 ### Unit tests — `tests/unit/test_extract_transform.py`
 
-Use the saved Odense fixture to check successful parsing, station
-deduplication, decimal values, timezone-aware timestamps, and filtering of
-unknown parameters. Invalid-input cases verify helpful errors for missing
-or malformed fields, invalid timestamps and values, non-finite numbers,
-invalid/out-of-range coordinates, non-string IDs, and malformed catalogs.
-They also check that `null` values and coordinate range endpoints are
-accepted, and that conflicting station coordinates resolve to the latest
-observation with a warning.
+Bruger den gemte Odense-fixture til at tjekke vellykket parsing,
+deduplikering af stationer, decimalværdier, tidsstempler med tidszone og
+frafiltrering af ukendte parametre. Tests med ugyldigt input verificerer
+brugbare fejlmeddelelser ved manglende eller fejlformede felter, ugyldige
+tidsstempler og værdier, ikke-endelige tal, ugyldige koordinater eller
+koordinater uden for intervallet, ID'er, der ikke er strenge, og fejlformede
+kataloger. De tjekker også, at `null`-værdier og intervallernes endepunkter for
+koordinater accepteres, og at modstridende stationskoordinater afgøres efter
+den seneste observation med en advarsel.
 
 ### Unit tests — `tests/unit/test_api.py`
 
-Use a fake HTTP session (no network) to check request parameters, UTC time
-formatting, merging of multiple pages, stopping on a short or empty page
-despite a `next` link, `FetchError` on failures, and the retry configuration.
+Bruger en falsk HTTP-session (uden netværk) til at tjekke request-parametre,
+UTC-tidsformatering, sammenfletning af flere sider, stop ved en ufuldstændig
+eller tom side trods et `next`-link, `FetchError` ved fejl samt
+retry-konfigurationen.
 
 ### Unit tests — `tests/unit/test_main.py`
 
-Check that `DMI_STATION_IDS` is split on commas, trimmed, deduplicated in
-order, defaults to `06120`, and is rejected when it contains no IDs. Check that
-`DMI_INITIAL_LOOKBACK_HOURS` defaults to 24 and must be a positive number, and
-that a missing or invalid `--file` input gives a clean error message.
+Tjekker, at `DMI_STATION_IDS` splittes ved kommaer, trimmes, deduplikeres i
+rækkefølge, har standardværdien `06120` og afvises, når den ikke indeholder
+nogen ID'er. Tjekker, at `DMI_INITIAL_LOOKBACK_HOURS` har standardværdien 24 og
+skal være et positivt tal, og at manglende eller ugyldigt `--file`-input giver
+en pæn fejlmeddelelse.
 
-The `run_every` tests use a fake clock, so they never really wait. They check
-the fixed rhythm, skipping of slots after a slow run, that failed runs (station
-or database errors) don't stop the loop while other errors do, that bad
-settings stop it before the first run, and that `--every` must be a positive
-number and cannot be combined with `--file`.
+Testene af `run_every` bruger et falsk ur, så de aldrig venter i virkeligheden.
+De tjekker den faste rytme, overspringning af tidspunkter efter en langsom
+kørsel, at fejlede kørsler (stations- eller databasefejl) ikke stopper løkken,
+mens andre fejl gør, at ugyldige indstillinger stopper den før første kørsel,
+og at `--every` skal være et positivt tal og ikke kan kombineres med `--file`.
 
-### Integration tests — `tests/integration/`
+### Integrationstests — `tests/integration/`
 
-- **`test_database_connection`** verifies the configured PostgreSQL connection
-  can execute a simple query.
-- **`test_load_populates_tables`** checks that a load writes the expected
-  observations, station, parameters, and value codes.
-- **`test_load_is_idempotent`** loads the same input twice and checks that
-  duplicate records are not created.
-- **`test_failed_load_rolls_back`** removes a required parameter from the
-  catalog, expects the load to fail, and verifies that no partial data remains.
-- **`test_run_file_loads_sample`** exercises `run_file()` with the sample
-  file and verifies that observations reach the database.
-- **`test_station_move_is_overwritten_with_warning`** and
-  **`test_duplicate_measurement_is_kept_with_warning`** check the load warnings.
-- **`test_run_api_resumes_after_latest_observation`** runs twice with a
-  fake fetch and checks the initial lookback, the one-hour overlap on the
-  second run, and that the overlap does not duplicate rows.
-- **`test_run_api_loads_each_station_with_its_own_window`** checks that a
-  stored station continues while a new station uses the lookback.
-- **`test_run_api_continues_after_a_failing_station`** and
-  **`test_run_api_continues_after_a_database_error`** check that one failing
-  station (API or database error) doesn't stop the others, and that the failed
-  station's rows are rolled back.
-- **`test_run_api_with_no_new_observations`** and
-  **`test_run_api_skips_unknown_parameters`** cover empty API results and
-  unknown parameters.
+- **`test_database_connection`** verificerer, at den konfigurerede
+  PostgreSQL-forbindelse kan udføre en simpel forespørgsel.
+- **`test_load_populates_tables`** tjekker, at en indlæsning skriver de
+  forventede observationer, station, parametre og værdikoder.
+- **`test_load_is_idempotent`** indlæser det samme input to gange og tjekker,
+  at der ikke oprettes dublerede records.
+- **`test_failed_load_rolls_back`** fjerner en påkrævet parameter fra
+  kataloget, forventer at indlæsningen fejler, og verificerer, at der ikke er
+  delvise data tilbage.
+- **`test_run_file_loads_sample`** afprøver `run_file()` med eksempelfilen og
+  verificerer, at observationerne når databasen.
+- **`test_station_move_is_overwritten_with_warning`** og
+  **`test_duplicate_measurement_is_kept_with_warning`** tjekker advarslerne ved
+  indlæsning.
+- **`test_run_api_resumes_after_latest_observation`** kører to gange med en
+  falsk fetch og tjekker det indledende lookback, overlappet på én time ved
+  anden kørsel, og at overlappet ikke dublerer rækker.
+- **`test_run_api_loads_each_station_with_its_own_window`** tjekker, at en
+  gemt station fortsætter, mens en ny station bruger lookback.
+- **`test_run_api_continues_after_a_failing_station`** og
+  **`test_run_api_continues_after_a_database_error`** tjekker, at én fejlende
+  station (API- eller databasefejl) ikke stopper de andre, og at den fejlede
+  stations rækker rulles tilbage.
+- **`test_run_api_with_no_new_observations`** og
+  **`test_run_api_skips_unknown_parameters`** dækker tomme API-resultater og
+  ukendte parametre.
 
-## 6. Current status and next step
+## 6. Nuværende status og næste skridt
 
-Incremental fetching from the DMI API, parsing, catalog validation,
-transactional database loading, scheduled collection with the `collector`
-service, and automated tests with an isolated test database are in place.
-The next step is a data visualisation dashboard, built as a Compose service
-that reads from the database. Continuous integration could be added
-alongside it.
+Inkrementel hentning fra DMI's API, parsing, validering af kataloget,
+transaktionel indlæsning i databasen, planlagt indsamling med
+`collector`-servicen og automatiserede tests med en isoleret testdatabase er på
+plads. Næste skridt er et dashboard til datavisualisering, bygget som en
+Compose-service, der læser fra databasen.
