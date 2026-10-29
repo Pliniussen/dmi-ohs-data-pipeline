@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# Keep the Python version the same as in .devcontainer/Dockerfile.
+FROM python:3.12.16-slim
 
 WORKDIR /dmi-ohs-data-pipeline
 

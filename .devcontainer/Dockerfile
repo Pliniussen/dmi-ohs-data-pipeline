@@ -1,4 +1,5 @@
-FROM python:3.12
+# Keep the Python version the same as in the root Dockerfile.
+FROM python:3.12.16
 
 WORKDIR /workspaces/dmi-ohs-data-pipeline
 
