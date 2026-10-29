@@ -40,6 +40,8 @@ Docker skal bruge WSL for at kunne køre. For at installere det:
     con4 L_con4_con1_0@-. depends on .-> con1
     con1 -- save data in --> n1["Volume: postgres_data"]
     con4 -- saves data in --> n2["Volume: pgadmin_data"]
+    img2 L_img2_con5_0@-- start --> con5["Service: collector"]
+    con5 L_con5_con1_0@-. depends on .-> con1
 
     dh@{ shape: cloud}
     img1@{ shape: subproc}
@@ -50,6 +52,7 @@ Docker skal bruge WSL for at kunne køre. For at installere det:
     con2@{ shape: rounded}
     con3@{ shape: rounded}
     con4@{ shape: rounded}
+    con5@{ shape: rounded}
     n1@{ shape: cyl}
     n2@{ shape: cyl}
     style dh fill:#BBDEFB,stroke:#2962FF,color:#000000
@@ -61,20 +64,23 @@ Docker skal bruge WSL for at kunne køre. For at installere det:
     style con2 fill:#C8E6C9,stroke:#00C853,color:#000000
     style con3 fill:#C8E6C9,stroke:#00C853,color:#000000
     style con4 fill:#C8E6C9,stroke:#00C853,color:#000000
+    style con5 fill:#C8E6C9,stroke:#00C853,color:#000000
     style n1 fill:#E1BEE7,color:#000000,stroke:#AA00FF
     style n2 fill:#E1BEE7,stroke:#AA00FF,color:#000000
     linkStyle 6 stroke:#cccccc,fill:none
     linkStyle 7 stroke:#cccccc,fill:none
     linkStyle 9 stroke:#cccccc,fill:none
+    linkStyle 13 stroke:#cccccc,fill:none
 
 ```
-Systemet består af 4 services:
-- ``app`` servicen kører applikationskoden
+Systemet består af 5 services:
+- ``app`` servicen kører applikationskoden én gang
+- ``collector`` servicen kører applikationskoden igen og igen, f.eks. hvert 10. minut
 - ``tests`` servicen kører testene
 - ``db`` servicen kører PostgreSQL
 - ``pgadmin`` servicen kører pgAdmin
 
-``app`` og ``tests`` servicerne bruger samme application image, som bliver bygget ud fra ``Dockerfile``. ``db`` og ``pgadmin`` bliver startet fra images (``postgres:16`` og ``dpage/pgadmin4``) hentet fra Docker Hub.
+``app``, ``collector`` og ``tests`` servicerne bruger samme application image, som bliver bygget ud fra ``Dockerfile``. ``db`` og ``pgadmin`` bliver startet fra images (``postgres:16`` og ``dpage/pgadmin4``) hentet fra Docker Hub.
 
 Data fra databasen i ``db`` bliver gemt i ``postgres_data`` volume. ``pgadmin`` gemmer konfigurationsdata i ``pgadmin_data`` volume.
 
@@ -119,9 +125,11 @@ PGADMIN_PASSWORD=password
 DMI_STATION_IDS=06120
 
 DMI_INITIAL_LOOKBACK_HOURS=24
+
+DMI_RUN_INTERVAL_MINUTES=10
 ```
 
-``DMI_STATION_IDS`` er en kommasepareret liste over de DMI-stationer, der hentes observationer fra, f.eks. ``06120,06180``. ``DMI_INITIAL_LOOKBACK_HOURS`` angiver, hvor mange timer bagud der hentes for en station, som endnu ikke har observationer i databasen, f.eks. første gang eller når en ny station tilføjes til listen. Begge er valgfrie; standardværdierne er vist ovenfor, og ``.env`` bør have de samme linjer som ``.env.example``.
+``DMI_STATION_IDS`` er en kommasepareret liste over de DMI-stationer, der hentes observationer fra, f.eks. ``06120,06180``. ``DMI_INITIAL_LOOKBACK_HOURS`` angiver, hvor mange timer bagud der hentes for en station, som endnu ikke har observationer i databasen, f.eks. første gang eller når en ny station tilføjes til listen. ``DMI_RUN_INTERVAL_MINUTES`` angiver, hvor mange minutter ``collector`` servicen venter mellem kørslerne. Alle tre er valgfrie; standardværdierne er vist ovenfor, og ``.env`` bør have de samme linjer som ``.env.example``.
 
 ---
 ## Dev container
@@ -183,6 +191,23 @@ tilgængelig i containeren, for eksempel en fil i den monterede
 ``sample_data``-mappe:
 
 ``docker compose run --build --rm app python -m dmi_ohs.main --file /dmi-ohs-data-pipeline/sample_data/odense-observations-2026-10-07.json``
+
+---
+## Automatisk indsamling
+
+``app`` servicen henter én gang og stopper. ``collector`` servicen kører den samme pipeline igen og igen, hvert ``DMI_RUN_INTERVAL_MINUTES`` minut (standard: 10, samme frekvens som DMI's observationer).
+
+1. Start: ``docker compose up -d --build collector``
+	- ``db`` bliver startet først, hvis den ikke allerede kører. ``-d`` gør, at collectoren kører i baggrunden.
+2. Se loggen: i Docker Desktop under ``collector`` containeren, eller med ``docker compose logs -f collector``
+	- Hver kørsel skriver ``Run started at ...``, en linje pr. station og ``Next run at ...``.
+3. Stop: ``docker compose stop collector``
+
+Hvis en kørsel fejler, f.eks. fordi DMI's API eller databasen ikke svarer, skrives en advarsel, og collectoren prøver igen ved næste kørsel. Hvis selve programmet går ned på grund af en fejl i koden, stopper collectoren og står som *Exited* i Docker Desktop; fejlen kan ses med ``docker compose logs collector``.
+
+Collectoren starter **ikke** af sig selv, når computeren eller Docker Desktop genstartes. Start den igen med ``docker compose up -d collector``. Der går ikke data tabt i mellemtiden: den første kørsel henter alt fra den nyeste gemte observation og frem.
+
+Efter ændringer i koden skal collectoren genbygges og genstartes med ``docker compose up -d --build collector``.
 
 ---
 ## Køre testene
@@ -282,6 +307,9 @@ Det er forresten best practice at lave **version pinning** i sin ``requirements.
 Køres i en WSL-terminal i projektets root, uden for dev containeren.
 
 - **Start ``app``:** ``docker compose up --build app``
+- **Start ``collector`` i baggrunden:** ``docker compose up -d --build collector``
+- **Se ``collector`` loggen:** ``docker compose logs -f collector``
+- **Stop ``collector``:** ``docker compose stop collector``
 - **Kør ``tests``:** ``docker compose run --build --rm tests``
 - **Stop services:** ``docker compose down``
 - **Stop services og slet volumes:** ``docker compose down -v``

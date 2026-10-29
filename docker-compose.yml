@@ -16,6 +16,27 @@ services:
     volumes:
       - ./sample_data:/dmi-ohs-data-pipeline/sample_data:ro
 
+  collector:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DMI_STATION_IDS: ${DMI_STATION_IDS:-06120}
+      DMI_INITIAL_LOOKBACK_HOURS: ${DMI_INITIAL_LOOKBACK_HOURS:-24}
+    command: python -m dmi_ohs.main --every ${DMI_RUN_INTERVAL_MINUTES:-10}
+    # Never restart by itself. A Docker Desktop restart counts as a failure,
+    # so "on-failure" would bring the collector back without db. Start it
+    # with "docker compose up -d collector" so db is started first.
+    restart: "no"
+    # Pass "docker stop" on to Python so the collector stops at once.
+    init: true
+
   tests:
     build: .
     depends_on:

@@ -1,7 +1,9 @@
 import argparse
 import json
+import math
 import os
 import sys
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,17 +48,31 @@ def station_ids_from_env() -> list[str]:
     return station_ids
 
 
+def _positive_number(raw: str) -> float | None:
+    """Return raw as a positive, finite number, or None if it is not one."""
+    try:
+        number = float(raw)
+    except ValueError:
+        return None
+    # The comparison is false for NaN, so "nan" is rejected too.
+    return number if 0 < number < float("inf") else None
+
+
 def lookback_from_env() -> timedelta:
     """Read DMI_INITIAL_LOOKBACK_HOURS, a positive number of hours (default 24)."""
     raw = os.environ.get("DMI_INITIAL_LOOKBACK_HOURS", "24")
-    try:
-        hours = float(raw)
-    except ValueError:
-        hours = float("nan")
-    # The comparison is false for NaN, so text and "nan" are rejected too.
-    if not 0 < hours < float("inf"):
+    hours = _positive_number(raw)
+    if hours is None:
         raise PipelineError(f"DMI_INITIAL_LOOKBACK_HOURS must be a positive number, got '{raw}'")
     return timedelta(hours=hours)
+
+
+def minutes_argument(raw: str) -> float:
+    """argparse type for --every: a positive number of minutes."""
+    minutes = _positive_number(raw)
+    if minutes is None:
+        raise argparse.ArgumentTypeError(f"must be a positive number of minutes, got '{raw}'")
+    return minutes
 
 
 def fetch_window(connection, station_id: str, lookback: timedelta, now: datetime) -> tuple[datetime, datetime]:
@@ -151,16 +167,64 @@ def run_api(fetch=fetch_observations) -> dict[str, LoadResult | None]:
     return results
 
 
+def _utc_text(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def run_every(
+    interval: timedelta, run=run_api, sleep=time.sleep, clock=time.monotonic, runs: int | None = None
+) -> None:
+    """Call run every interval until the process is stopped.
+
+    The settings are checked once first, so a bad .env stops straight away.
+    A run that fails because of a station or the database is reported, and
+    the loop waits for the next one; any other error ends the loop. Runs
+    keep a fixed rhythm, and a run that takes longer than the interval skips
+    the slots it overran. runs limits the number of runs, for tests.
+    """
+    station_ids_from_env()
+    lookback_from_env()
+    seconds = interval.total_seconds()
+    next_start = clock()
+    done = 0
+    while True:
+        print(f"Run started at {_utc_text(datetime.now(timezone.utc))}.")
+        try:
+            run()
+        except (PipelineError, psycopg.Error) as error:
+            warn(f"run failed: {error}")
+        done += 1
+        if done == runs:
+            return
+
+        now = clock()
+        next_start += seconds
+        if next_start < now:
+            next_start += math.ceil((now - next_start) / seconds) * seconds
+        wait = next_start - now
+        print(f"Next run at {_utc_text(datetime.now(timezone.utc) + timedelta(seconds=wait))}.")
+        sleep(wait)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Load DMI observations into PostgreSQL.")
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
         "--file",
         type=Path,
         help="load a saved observation JSON file instead of fetching from the DMI API",
     )
+    source.add_argument(
+        "--every",
+        type=minutes_argument,
+        metavar="MINUTES",
+        help="keep running, fetching from the DMI API every MINUTES minutes",
+    )
     args = parser.parse_args()
     try:
-        if args.file is None:
+        if args.every is not None:
+            run_every(timedelta(minutes=args.every))
+        elif args.file is None:
             run_api()
         else:
             run_file(args.file)

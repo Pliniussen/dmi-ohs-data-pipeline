@@ -12,6 +12,8 @@
 4. Upsert parameter metadata, value-code descriptions, stations, and observations into PostgreSQL in one transaction.
 5. Print warnings, then the number of input rows submitted to each table's upsert statements. These are not counts of rows newly inserted or changed.
 
+The `app` service runs these steps once and exits. The `collector` service (`python -m dmi_ohs.main --every MINUTES`) repeats them every `DMI_RUN_INTERVAL_MINUTES`; see [Scheduled collection](#scheduled-collection).
+
 ### Warnings
 
 These situations are reported on stderr but do not stop the load:
@@ -31,6 +33,8 @@ These were chosen deliberately when API extraction was added:
 - **Overwrite moved stations instead of failing.** A station move is unlikely in the near future. If it happens, the warning makes it visible and the newest coordinates are kept. Station history (DMI's `validFrom`/`validTo`) is not modelled.
 - **Warn about duplicate measurements, don't prevent them.** It is not yet known whether DMI keeps the same observation ID when it corrects a value. If duplicates show up in practice, add a unique constraint on `(station_id, parameter_id, observed_at)` and change the observation upsert to target it. That is a schema change.
 - **One transaction per station.** A station that fails (API error, bad data or a database error) does not roll back or block the others. The run still exits with an error, so a scheduler can notice.
+- **Scheduling as a Python loop in a Compose service, not cron or a host scheduler.** The loop is plain Python and unit-tested, needs no extra image, and shows up in Docker Desktop next to the other services. It keeps going when a run fails because of the API or the database; any other error stops it, so a bug shows up as an exited container.
+- **The collector is started by hand (`restart: "no"`).** When Docker restarts containers itself, it doesn't go through Compose, so `depends_on` is ignored and `db` stays stopped. That rules out `unless-stopped`, and also `on-failure`: tested on 2026-10-29, a Docker Desktop restart kills the containers with exit code 255, Docker counts that as a failure, and it brought the collector back without `db`. Starting it with `docker compose up -d collector` always starts `db` first. The cost is that a crash from a bug is not restarted, but API and database problems don't crash the loop. Not running costs no data, because the next run fills the gap from the newest stored row.
 
 ### DMI API behaviour
 
@@ -52,6 +56,7 @@ Settings come from environment variables, which Compose reads from `.env`. `.env
 |---|---|---|
 | `DMI_STATION_IDS` | `06120` | Comma-separated DMI station IDs to fetch, e.g. `06120,06180`. Kept as text because the leading zero is part of the ID. |
 | `DMI_INITIAL_LOOKBACK_HOURS` | `24` | How far back to fetch for a station with no stored observations (first run, or newly added station). Ignored once the station has data. Set it higher (e.g. `720` for 30 days) before the first run to start with more history. Must be a positive number. |
+| `DMI_RUN_INTERVAL_MINUTES` | `10` | Minutes between the start of one `collector` run and the next. Must be a positive number. |
 | `POSTGRES_USER` | `admin` | Database user. Keep `admin`: `pgadmin/servers.json` connects with that name and cannot read environment variables. |
 | `TEST_POSTGRES_DB` | `dmi_ohs_test` | Database used by the tests. Must differ from `POSTGRES_DB`. |
 
@@ -135,7 +140,8 @@ Completed:
 - Incremental fetching from the DMI observation API with pagination, timeouts, and retries.
 - A command-line pipeline that fetches from the API by default or loads a JSON file with `--file`, then reports input row counts submitted to the upserts.
 - Clean error messages, without a traceback, for invalid settings and unreadable or invalid `--file` input.
-- Unit tests for parsing, input and catalog validation, settings, file errors, and the API client (using a fake HTTP session), plus PostgreSQL integration tests for connectivity, loading, repeat loads, rollback, warnings, per-station failures (API and database errors), and the incremental fetch window.
+- Scheduled collection: the `collector` service runs the pipeline every `DMI_RUN_INTERVAL_MINUTES` with `--every`.
+- Unit tests for parsing, input and catalog validation, settings, file errors, the scheduling loop, and the API client (using a fake HTTP session), plus PostgreSQL integration tests for connectivity, loading, repeat loads, rollback, warnings, per-station failures (API and database errors), and the incremental fetch window.
 
 Verified on 2026-10-29 (WSL, fresh volume):
 
@@ -143,16 +149,20 @@ Verified on 2026-10-29 (WSL, fresh volume):
 - Two real API runs for 06120. The first loaded 2,062 observations (24-hour lookback). The second loaded 95, all of them overlap rows that were already stored. No warnings were printed.
 - Queries A–D in [Checking the data](#checking-the-data) found no gaps and no duplicate measurements. The longest publishing delay was 36 s.
 
+Not yet verified:
+
+- The `collector` service has unit tests for its loop but has not yet run in Docker.
+
 Not yet completed:
 
-- Scheduled runs (the `app` service fetches once and exits).
+- Visualisation dashboard.
 - Indoor hardware source/device model.
 
 ## Running the services and protecting database data
 
 ### What the Docker and PostgreSQL names mean
 
-- **Docker Compose** reads `docker-compose.yml` and starts the containers described there. The project has an `app` service for the pipeline, a `tests` service for pytest, a `db` service running PostgreSQL, and a `pgadmin` service for the database browser.
+- **Docker Compose** reads `docker-compose.yml` and starts the containers described there. The project has an `app` service that runs the pipeline once, a `collector` service that runs it on a schedule, a `tests` service for pytest, a `db` service running PostgreSQL, and a `pgadmin` service for the database browser.
 - **PostgreSQL** is the database server software. The Compose service is named `db`; containers on the Compose network use that name to reach the server. Its port is not published to the host: everything that uses the database runs as a Compose service. A future dashboard should do the same, connecting to `db:5432` and publishing only its own web port (e.g. `127.0.0.1:3000:3000`). For `psql`, use `docker compose exec db psql -U admin -d postgres_db`.
 - **`POSTGRES_HOST`** is the server address. In this project, `.env.example` sets it to `db`. **`POSTGRES_DB`** is the name of one database inside that server; `.env.example` sets it to `postgres_db`. `POSTGRES_PORT` is the server port, normally `5432`.
 - The app and tests read these environment variables in `dmi_ohs/database.py`. `docker-compose.yml` passes the values into each container. `${POSTGRES_DB}` means “use the value supplied by the environment or `.env` file.”
@@ -168,7 +178,10 @@ The dev container runs as a non-root `vscode` user (`remoteUser` in `devcontaine
 The dev container was briefly a Compose service on the same network as `db`. That setup was reverted because rebuilding it fails with Docker Compose 5.6.1 and Buildx ≥0.37.2: Compose builds through Buildx bake, bake now enforces filesystem entitlements, and Compose does not grant read access to the `Dockerfile-with-features` that the Dev Containers CLI writes to `/tmp`, outside the build context. `COMPOSE_BAKE=false` has no effect in Compose 5, and `BUILDX_BAKE_ENTITLEMENTS_FS=0` works only by disabling the check on each developer's machine. The bug is docker/compose#14285, fixed by docker/compose#14325 but not in a release yet. A dev container built from its own Dockerfile uses `docker buildx build`, which is not affected.
 
 ```bash
-docker compose run --build --rm app      # fetch new observations into the app database
+docker compose run --build --rm app      # fetch new observations into the app database once
+docker compose up -d --build collector   # keep fetching every DMI_RUN_INTERVAL_MINUTES
+docker compose logs -f collector         # follow the collector's output
+docker compose stop collector            # stop scheduled collection
 docker compose run --build --rm tests    # run pytest against the test database
 docker compose up -d pgadmin             # pgAdmin at http://localhost:8080
 docker compose down                      # stop services
@@ -179,6 +192,17 @@ docker compose down                      # stop services
 After changing `requirements.txt`, rebuild the dev container (**Dev Containers: Rebuild Container**) and use `--build` with `docker compose run`, so both images get the new libraries.
 
 The `app` service uses the default command from `Dockerfile`, `python -m dmi_ohs.main`: it fetches new observations from the DMI API into the database and then exits. Add `--file PATH` to load a saved JSON file instead. To start the database, pgAdmin, and run that app without starting tests, use `docker compose up --build db pgadmin app`. To start only PostgreSQL in the background, use `docker compose up -d db`.
+
+### Scheduled collection
+
+The `collector` service runs `python -m dmi_ohs.main --every ${DMI_RUN_INTERVAL_MINUTES:-10}`. Each run prints `Run started at …`, one line per station, and `Next run at …`. Runs keep a fixed rhythm: the next one starts one interval after the previous one started, and a run that takes longer than the interval skips the slots it overran instead of running several times back to back. The settings are checked once at startup, so a bad `.env` stops the collector immediately with an error.
+
+- A run that fails because of the DMI API or the database is reported as a warning, and the collector waits for the next run.
+- Any other error stops the process, and Docker does not restart it (`restart: "no"`). The container then shows as *Exited* in Docker Desktop, and `docker compose logs collector` shows the error.
+- `init: true` passes `docker compose stop`'s signal to Python, so the collector stops straight away instead of after Docker's 10-second timeout.
+- `PYTHONUNBUFFERED=1` in `Dockerfile` makes the output appear in the logs immediately.
+- The collector does not start on its own after a PC or Docker Desktop restart. Start it with `docker compose up -d collector`; the first run fills the gap.
+- `--every` and `--file` cannot be combined. `app` and `collector` can run at the same time, because every load is an upsert.
 
 ### Test database isolation and initialization
 
@@ -242,7 +266,7 @@ HAVING count(*) > 1;
 
 ## Known limitations
 
-- Each run fetches the configured stations once and then exits; nothing schedules repeated runs yet.
+- Scheduled collection runs only while the `collector` service is running. It has to be started again after a PC or Docker Desktop restart; nothing is lost, but the data is not current until it runs.
 - Duplicate measurements under different observation IDs are reported but not resolved.
 - PostgreSQL initialization files bootstrap new volumes only. Existing volumes are not updated automatically when the schema evolves.
 - Catalog entries are upserted when present, but entries removed from the local catalog are not deleted from PostgreSQL.
@@ -251,7 +275,7 @@ HAVING count(*) > 1;
 
 ## Recommended next steps
 
-1. Schedule the `app` service to run regularly (for example every 10 minutes, matching DMI's observation frequency).
+1. Build the visualisation dashboard as a Compose service that reads from `db:5432`.
 2. Decide whether catalog synchronization should remove database entries that are no longer in the local catalog.
 3. Enforce the 95% coverage target if it remains a project requirement, and add continuous integration.
 4. Add the indoor source/device model when the building hardware is available.

@@ -136,9 +136,15 @@ erDiagram
   raises `PipelineError` after the loop if any station failed.
 - **`run_file(input_path)`** loads a saved JSON file, and raises
   `PipelineError` if the file is missing or its content is invalid.
-- **`main()`** calls `run_file()` when `--file` is given, otherwise `run_api()`,
-  and exits with an error message instead of a traceback when a station,
-  setting or input file is wrong.
+- **`run_every(interval)`** checks the settings once, then calls `run_api()`
+  every `interval` until it is stopped. A run that fails because of the API or
+  the database is reported, and the loop waits for the next run. Runs keep a
+  fixed rhythm, and a run that overruns the interval skips the missed slots.
+  The `collector` Compose service uses it.
+- **`main()`** calls `run_every()` when `--every MINUTES` is given,
+  `run_file()` when `--file` is given, otherwise `run_api()` once. It exits
+  with an error message instead of a traceback when a station, setting or
+  input file is wrong.
 
 ## 5. Tests and how to run them
 
@@ -183,6 +189,12 @@ order, defaults to `06120`, and is rejected when it contains no IDs. Check that
 `DMI_INITIAL_LOOKBACK_HOURS` defaults to 24 and must be a positive number, and
 that a missing or invalid `--file` input gives a clean error message.
 
+The `run_every` tests use a fake clock, so they never really wait. They check
+the fixed rhythm, skipping of slots after a slow run, that failed runs (station
+or database errors) don't stop the loop while other errors do, that bad
+settings stop it before the first run, and that `--every` must be a positive
+number and cannot be combined with `--file`.
+
 ### Integration tests — `tests/integration/`
 
 - **`test_database_connection`** verifies the configured PostgreSQL connection
@@ -213,6 +225,8 @@ that a missing or invalid `--file` input gives a clean error message.
 ## 6. Current status and next step
 
 Incremental fetching from the DMI API, parsing, catalog validation,
-transactional database loading, and automated tests with an isolated test
-database are in place. A natural next step is to schedule regular runs and
-add continuous integration. Afterwards, if project scope and time contraints allow it, a real-time data visualisations dashboard could be implemented.
+transactional database loading, scheduled collection with the `collector`
+service, and automated tests with an isolated test database are in place.
+The next step is a data visualisation dashboard, built as a Compose service
+that reads from the database. Continuous integration could be added
+alongside it.
