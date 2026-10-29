@@ -148,10 +148,7 @@ Verified on 2026-10-29 (WSL, fresh volume):
 - `docker compose run --build --rm tests`: all tests passed against PostgreSQL, with 95% coverage.
 - Two real API runs for 06120. The first loaded 2,062 observations (24-hour lookback). The second loaded 95, all of them overlap rows that were already stored. No warnings were printed.
 - Queries A–D in [Checking the data](#checking-the-data) found no gaps and no duplicate measurements. The longest publishing delay was 36 s.
-
-Not yet verified:
-
-- The `collector` service has unit tests for its loop but has not yet run in Docker.
+- The `collector` service ran in Docker and logged each run followed by the next run time, 10 minutes later. With `restart: on-failure` it came back by itself, without `db`, after a Docker Desktop restart (see the design decisions). With `restart: "no"` it stayed stopped after a restart, and the next manual start filled the gap.
 
 Not yet completed:
 
